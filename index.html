@@ -1,0 +1,886 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0c0d10">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Cadence">
+<title>Cadence Timer</title>
+<style>
+:root{
+  --bg:#0c0d10; --panel:#15171c; --panel2:#1c1f26; --line:#272b33;
+  --text:#f2f3f5; --muted:#8b919c; --faint:#5a606b;
+  --accent:#ff6b4a;
+  --prep:#f5b94a; --warm:#a78bfa; --work:#ff6b4a; --rest:#34d399; --cool:#60a5fa; --count:#ff6b4a; --up:#e879f9;
+  --r:18px;
+  --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
+  font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  -webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;padding:0}
+input{font:inherit;color:inherit}
+.view{position:fixed;inset:0;display:none;flex-direction:column;overflow:hidden}
+.view.on{display:flex}
+.scroll{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px calc(120px + var(--safe-b))}
+.wrap{max-width:640px;margin:0 auto;width:100%}
+
+/* ---------- header ---------- */
+.hdr{display:flex;align-items:center;gap:12px;padding:calc(14px + var(--safe-t)) 16px 10px;max-width:672px;margin:0 auto;width:100%}
+.hdr h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:0;flex:1}
+.hdr h1 span{color:var(--accent)}
+.hdr h2{font-size:17px;font-weight:600;margin:0;flex:1;text-align:center}
+.icon-btn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line)}
+.icon-btn svg{width:20px;height:20px}
+.txt-btn{height:44px;padding:0 14px;border-radius:22px;font-weight:600;color:var(--muted)}
+.txt-btn.primary{color:var(--bg);background:var(--text)}
+
+/* ---------- list ---------- */
+.empty{color:var(--muted);text-align:center;margin-top:22vh;line-height:1.6}
+.empty b{display:block;color:var(--text);font-size:20px;margin-bottom:4px}
+.card{display:flex;align-items:center;gap:14px;background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin:10px 0;position:relative;overflow:hidden}
+.card::before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,var(--accent))}
+.card .meta{flex:1;min-width:0}
+.card .name{font-size:18px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card .sub{font-size:14px;color:var(--muted);margin-top:3px}
+.card .tag{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--c);font-weight:700;margin-bottom:4px}
+.play{width:56px;height:56px;border-radius:50%;display:grid;place-items:center;background:var(--c,var(--accent));color:#111;flex:none}
+.play svg{width:22px;height:22px;margin-left:3px}
+.fab{position:fixed;right:max(20px,calc(50% - 300px));bottom:calc(24px + var(--safe-b));width:68px;height:68px;border-radius:50%;
+  background:var(--accent);color:#111;display:grid;place-items:center;box-shadow:0 10px 30px rgba(255,107,74,.35);z-index:5;transition:transform .15s}
+.fab:active{transform:scale(.94)}
+.fab svg{width:30px;height:30px}
+
+/* ---------- sheet ---------- */
+.scrim{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;z-index:20;align-items:flex-end;justify-content:center}
+.scrim.on{display:flex;animation:fade .18s}
+.sheet{background:var(--panel);border:1px solid var(--line);border-bottom:0;border-radius:24px 24px 0 0;width:100%;max-width:640px;
+  padding:10px 16px calc(20px + var(--safe-b));animation:up .22s cubic-bezier(.2,.8,.2,1);max-height:88vh;overflow-y:auto}
+.sheet .grab{width:40px;height:5px;border-radius:3px;background:var(--line);margin:0 auto 14px}
+.sheet h3{margin:4px 4px 12px;font-size:20px}
+.choice{display:flex;align-items:center;gap:14px;width:100%;text-align:left;padding:16px;border-radius:16px;background:var(--panel2);margin-bottom:10px;border:1px solid var(--line)}
+.choice .dot{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 18%,transparent);color:var(--c);flex:none}
+.choice .dot svg{width:22px;height:22px}
+.choice b{display:block;font-size:17px}
+.choice small{color:var(--muted);font-size:14px}
+@keyframes up{from{transform:translateY(40px);opacity:0}}
+@keyframes fade{from{opacity:0}}
+
+/* ---------- forms ---------- */
+.sec{margin:22px 0 8px;font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:700;padding-left:4px}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+.row{display:flex;align-items:center;gap:12px;min-height:58px;padding:8px 14px;border-top:1px solid var(--line)}
+.row:first-child{border-top:0}
+.row .lbl{flex:1;font-size:16px}
+.row .lbl small{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.name-in{flex:1;min-width:0;background:transparent;border:0;outline:0;font-size:16px;padding:10px 0}
+.name-in::placeholder{color:var(--faint)}
+.big-name{font-size:22px;font-weight:600}
+.dur,.num{display:flex;align-items:center;background:var(--panel2);border-radius:12px;border:1px solid var(--line);flex:none}
+.dur input{width:2.6ch;text-align:center;background:transparent;border:0;outline:0;font-size:17px;font-variant-numeric:tabular-nums;padding:8px 0}
+.dur input.mm{text-align:right;width:3ch}
+.dur input.ss{text-align:left}
+.dur .colon{color:var(--muted);padding:0 1px}
+.step,.num button{width:38px;height:40px;font-size:20px;color:var(--muted);display:grid;place-items:center}
+.step:active,.num button:active{color:var(--text)}
+.num span{min-width:2.4ch;text-align:center;font-size:17px;font-variant-numeric:tabular-nums}
+.tog{position:relative;width:52px;height:32px;flex:none}
+.tog input{opacity:0;position:absolute;inset:0;margin:0;cursor:pointer;z-index:1}
+.tog span{position:absolute;inset:0;border-radius:16px;background:var(--line);transition:.2s}
+.tog span::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s}
+.tog input:checked+span{background:var(--rest)}
+.tog input:checked+span::after{transform:translateX(20px)}
+.ivl{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin:10px 0;overflow:hidden}
+.ivl .row{min-height:52px}
+.ivl .bar{width:4px;align-self:stretch;border-radius:2px;flex:none}
+.ivl .x{width:36px;height:36px;border-radius:50%;color:var(--faint);display:grid;place-items:center}
+.ivl .x svg{width:16px;height:16px}
+.add{width:100%;padding:16px;border-radius:var(--r);border:1.5px dashed var(--line);color:var(--muted);font-weight:600;margin-top:4px}
+.danger{width:100%;padding:16px;border-radius:var(--r);color:#ff6b6b;background:var(--panel);border:1px solid var(--line);margin-top:26px;font-weight:600}
+.total{display:flex;justify-content:space-between;align-items:baseline;padding:18px 4px 0;color:var(--muted)}
+.total b{color:var(--text);font-size:22px;font-variant-numeric:tabular-nums}
+input[type=range]{-webkit-appearance:none;appearance:none;flex:1;height:32px;background:transparent}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--accent) var(--p,50%),var(--line) var(--p,50%))}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:26px;height:26px;border-radius:50%;background:#fff;margin-top:-10px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:var(--line)}
+input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--accent)}
+input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;background:#fff;border:0}
+.seg3{display:flex;background:var(--panel2);border-radius:12px;padding:3px;border:1px solid var(--line)}
+.seg3 button{padding:8px 14px;border-radius:9px;color:var(--muted);font-variant-numeric:tabular-nums}
+.seg3 button.on{background:var(--text);color:var(--bg);font-weight:600}
+.note{color:var(--faint);font-size:13px;line-height:1.5;padding:10px 4px 0}
+
+/* ---------- run ---------- */
+#run{background:#000;user-select:none;-webkit-user-select:none;touch-action:manipulation;--c:var(--work)}
+#run .fill{position:absolute;left:0;right:0;bottom:0;height:0;background:linear-gradient(to top,color-mix(in srgb,var(--c) 34%,transparent),color-mix(in srgb,var(--c) 16%,transparent));transition:background .6s}
+#run .glow{position:absolute;inset:0;background:radial-gradient(120% 70% at 50% 45%,color-mix(in srgb,var(--c) 22%,transparent),transparent 70%);transition:background .6s}
+#run .top{position:relative;z-index:2;display:flex;align-items:center;gap:12px;padding:calc(12px + var(--safe-t)) 16px 0}
+#run .top .ttl{flex:1;text-align:center;color:rgba(255,255,255,.7);font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#run .top .cnt{min-width:44px;text-align:right;color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums;font-size:15px;font-weight:600}
+.hold{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08)}
+.hold svg.i{width:18px;height:18px}
+.hold svg.ring{position:absolute;inset:0;width:44px;height:44px;transform:rotate(-90deg)}
+.hold circle{fill:none;stroke:#fff;stroke-width:3;stroke-dasharray:132;stroke-dashoffset:132}
+.hold.charging circle{transition:stroke-dashoffset .7s linear;stroke-dashoffset:0}
+#run .stage{position:relative;z-index:1;flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:0 12px;min-height:0}
+#phase{font-size:clamp(22px,6.5vw,46px);font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:var(--c);text-align:center;max-width:100%;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:color .4s}
+#digits{font-weight:250;font-variant-numeric:tabular-nums;letter-spacing:-.04em;line-height:.9;font-size:min(33vw,52vh);margin:2vh 0;white-space:nowrap;
+  font-feature-settings:"tnum" 1,"ss01" 1;text-shadow:0 0 60px color-mix(in srgb,var(--c) 30%,transparent)}
+#digits.long{font-size:min(23vw,44vh)}
+#digits.short{font-size:min(64vw,58vh);letter-spacing:-.05em}
+#digits.pulse{animation:pulse .5s}
+@keyframes pulse{0%{transform:scale(1.04)}100%{transform:scale(1)}}
+.prog{width:min(86vw,900px);height:6px;border-radius:3px;background:rgba(255,255,255,.12);overflow:hidden}
+.prog i{display:block;height:100%;width:0;background:var(--c);border-radius:3px;transition:background .4s}
+#next{margin-top:3vh;color:rgba(255,255,255,.62);font-size:clamp(16px,4.4vw,24px);font-weight:500;text-align:center;min-height:1.3em}
+#next b{color:#fff;font-weight:600}
+#run .bottom{position:relative;z-index:2;padding:0 16px calc(22px + var(--safe-b));display:flex;flex-direction:column;align-items:center;gap:14px;min-height:120px;justify-content:flex-end}
+.hint{color:rgba(255,255,255,.4);font-size:14px;letter-spacing:.04em}
+.ctrls{display:flex;align-items:center;gap:22px}
+.ctrls button{width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.1);display:grid;place-items:center}
+.ctrls button svg{width:26px;height:26px}
+.ctrls .main{width:88px;height:88px;background:#fff;color:#000}
+.ctrls .main svg{width:34px;height:34px}
+#run.paused #digits{opacity:.55}
+#run.paused #phase::after{content:" · paused";color:rgba(255,255,255,.55)}
+.done{position:absolute;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center;padding:24px}
+.done.on{display:flex;animation:fade .4s}
+.done .big{font-size:clamp(34px,9vw,64px);font-weight:700;letter-spacing:-.02em}
+.done .stat{color:var(--muted);font-size:18px;font-variant-numeric:tabular-nums}
+.done .acts{display:flex;gap:12px;margin-top:22px}
+.done .acts button{padding:16px 28px;border-radius:30px;font-weight:700;font-size:17px;background:rgba(255,255,255,.12)}
+.done .acts button.primary{background:#fff;color:#000}
+.toast{position:fixed;left:50%;top:calc(16px + var(--safe-t));transform:translate(-50%,-30px);opacity:0;background:var(--panel2);border:1px solid var(--line);
+  padding:12px 18px;border-radius:24px;font-size:14px;z-index:50;transition:.3s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
+.toast.on{transform:translate(-50%,0);opacity:1}
+@media (orientation:landscape) and (max-height:520px){
+  #digits{font-size:min(30vw,62vh)} #next{margin-top:1vh} #run .bottom{min-height:84px;padding-bottom:calc(10px + var(--safe-b))}
+  .ctrls button{width:52px;height:52px}.ctrls .main{width:68px;height:68px}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+</head>
+<body>
+
+<!-- ============ LIST ============ -->
+<section id="list" class="view on">
+  <header class="hdr">
+    <h1>Cadence<span>.</span></h1>
+    <button class="icon-btn" id="openSettings" aria-label="Settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
+    </button>
+  </header>
+  <div class="scroll"><div class="wrap" id="cards"></div></div>
+  <button class="fab" id="fab" aria-label="Add timer">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+  </button>
+</section>
+
+<!-- ============ EDIT ============ -->
+<section id="edit" class="view">
+  <header class="hdr">
+    <button class="txt-btn" id="cancelEdit">Cancel</button>
+    <h2 id="editTitle">New timer</h2>
+    <button class="txt-btn primary" id="saveEdit">Save</button>
+  </header>
+  <div class="scroll"><div class="wrap" id="form"></div></div>
+</section>
+
+<!-- ============ RUN ============ -->
+<section id="run" class="view">
+  <div class="glow"></div>
+  <div class="fill" id="fill"></div>
+  <div class="top">
+    <button class="hold" id="exitRun" aria-label="Hold to exit">
+      <svg class="ring" viewBox="0 0 44 44"><circle cx="22" cy="22" r="21"/></svg>
+      <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>
+    </button>
+    <div class="ttl" id="runTitle"></div>
+    <div class="cnt" id="runCount"></div>
+  </div>
+  <div class="stage">
+    <div id="phase"></div>
+    <div id="digits" class="short">0</div>
+    <div class="prog"><i id="bar"></i></div>
+    <div id="next"></div>
+  </div>
+  <div class="bottom" id="runBottom"></div>
+  <div class="done" id="done">
+    <div class="big">Workout complete</div>
+    <div class="stat" id="doneStat"></div>
+    <div class="acts">
+      <button id="doneAgain">Again</button>
+      <button class="primary" id="doneClose">Done</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SHEETS ============ -->
+<div class="scrim" id="addScrim">
+  <div class="sheet" role="dialog" aria-label="Add timer">
+    <div class="grab"></div>
+    <h3>New timer</h3>
+    <button class="choice" data-new="interval" style="--c:var(--work)">
+      <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 12h3l3-7 4 14 3-7h5"/></svg></span>
+      <span><b>Intervals</b><small>Work / rest rounds, warm up, cool down</small></span>
+    </button>
+    <button class="choice" data-new="countdown" style="--c:var(--prep)">
+      <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l-2.5 2M9 2h6"/></svg></span>
+      <span><b>Countdown</b><small>Count down from a set time, optionally repeat</small></span>
+    </button>
+    <button class="choice" data-new="countup" style="--c:var(--up)">
+      <span class="dot"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 18L10 12l4 4 6-8"/><path d="M15 8h5v5"/></svg></span>
+      <span><b>Count up</b><small>Stopwatch, with optional target and repeat</small></span>
+    </button>
+  </div>
+</div>
+
+<div class="scrim" id="setScrim">
+  <div class="sheet" role="dialog" aria-label="Settings" id="setSheet"></div>
+</div>
+
+<div class="toast" id="toast"></div>
+<audio id="music" preload="auto" playsinline></audio>
+<input type="file" id="musicPick" accept="audio/*" multiple hidden>
+
+<script>
+"use strict";
+/* =========================================================
+   Utilities & storage
+   ========================================================= */
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pad = n => String(n).padStart(2, "0");
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const uid = () => Math.random().toString(36).slice(2, 10);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+function fmt(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+  return h ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+function spokenDur(sec) {
+  const m = Math.floor(sec / 60), s = sec % 60, out = [];
+  if (m) out.push(m + (m === 1 ? " minute" : " minutes"));
+  if (s) out.push(s + (s === 1 ? " second" : " seconds"));
+  return out.join(" ");
+}
+let toastT;
+function toast(msg) {
+  const t = $("#toast"); t.textContent = msg; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2600);
+}
+
+const ICON = {
+  play:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg>',
+  pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.2" height="16" rx="1.2"/><rect x="13.8" y="4" width="4.2" height="16" rx="1.2"/></svg>',
+  prev:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5.5v13a.8.8 0 0 1-1.25.66L9.5 12.66a.8.8 0 0 1 0-1.32l9.25-6.5A.8.8 0 0 1 20 5.5z"/></svg>',
+  next:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5.5v13a.8.8 0 0 0 1.25.66l9.25-6.5a.8.8 0 0 0 0-1.32L5.25 4.84A.8.8 0 0 0 4 5.5z"/></svg>',
+  x:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
+};
+const KIND_COLOR = { prep:"var(--prep)", warm:"var(--warm)", work:"var(--work)", rest:"var(--rest)", cool:"var(--cool)", count:"var(--count)", up:"var(--up)" };
+const TYPE_META = {
+  interval:  { tag:"Intervals", c:"var(--work)" },
+  countdown: { tag:"Countdown", c:"var(--prep)" },
+  countup:   { tag:"Count up",  c:"var(--up)" }
+};
+
+/* =========================================================
+   State
+   ========================================================= */
+const DEFAULT_SETTINGS = {
+  volume: 0.8, voice: true, voiceLead: 5, beeps: true, haptics: true,
+  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false
+};
+let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
+const saveSettings = () => store.set("cadence.settings", settings);
+
+function newTimer(type) {
+  const base = { id: uid(), type, name: "", prepare: 10 };
+  if (type === "interval") return { ...base, warmup: { on: false, dur: 300, name: "" }, cooldown: { on: false, dur: 300, name: "" },
+    work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1 };
+  if (type === "countdown") return { ...base, duration: 60, repeat: 1 };
+  return { ...base, prepare: 0, hasTarget: false, target: 300, repeat: 1 };
+}
+function samples() {
+  const tab = newTimer("interval");
+  tab.name = "Tabata"; tab.work = Array.from({ length: 8 }, () => ({ name: "", dur: 20, rest: 10, restName: "" }));
+  const plank = newTimer("countdown"); plank.name = "Plank hold"; plank.duration = 60; plank.repeat = 3; plank.prepare = 5;
+  return [tab, plank];
+}
+let timers = store.get("cadence.timers", null) || samples();
+const saveTimers = () => store.set("cadence.timers", timers);
+
+/* =========================================================
+   Plan: timer definition -> list of segments
+   ========================================================= */
+function buildPlan(t) {
+  const segs = [];
+  if (t.prepare > 0) segs.push({ kind: "prep", label: "Get ready", dur: t.prepare });
+  let loopFrom = null;
+  if (t.type === "interval") {
+    if (t.warmup.on && t.warmup.dur > 0) segs.push({ kind: "warm", label: t.warmup.name || "Warm up", dur: t.warmup.dur });
+    const sets = Math.max(1, t.sets || 1), n = t.work.length;
+    for (let s = 0; s < sets; s++) {
+      t.work.forEach((w, i) => {
+        const setTag = sets > 1 ? `Set ${s + 1}/${sets}` : "";
+        segs.push({ kind: "work", label: w.name || `Work ${i + 1}`, dur: w.dur, sub: setTag });
+        const last = s === sets - 1 && i === n - 1;
+        if (w.rest > 0 && (!last || t.restAfterLast)) segs.push({ kind: "rest", label: w.restName || `Rest ${i + 1}`, dur: w.rest, sub: setTag });
+      });
+    }
+    if (t.cooldown.on && t.cooldown.dur > 0) segs.push({ kind: "cool", label: t.cooldown.name || "Cool down", dur: t.cooldown.dur });
+  } else if (t.type === "countdown") {
+    const n = t.repeat;
+    if (n === 0) { loopFrom = segs.length; segs.push({ kind: "count", label: (t.name || "Round") + " #", dur: t.duration }); }
+    else for (let i = 0; i < n; i++) segs.push({ kind: "count", label: n > 1 ? `Round ${i + 1}` : (t.name || "Countdown"), dur: t.duration });
+  } else {
+    if (!t.hasTarget) segs.push({ kind: "up", label: t.name || "Count up", dur: null });
+    else {
+      const n = t.repeat;
+      if (n === 0) { loopFrom = segs.length; segs.push({ kind: "up", label: "Round #", dur: t.target }); }
+      else for (let i = 0; i < n; i++) segs.push({ kind: "up", label: n > 1 ? `Round ${i + 1}` : (t.name || "Count up"), dur: t.target });
+    }
+  }
+  return { segs, loopFrom };
+}
+function planTotal(plan) {
+  if (plan.loopFrom != null || plan.segs.some(s => s.dur == null)) return null;
+  return plan.segs.reduce((a, s) => a + s.dur, 0);
+}
+function summary(t) {
+  const plan = buildPlan(t), tot = planTotal(plan);
+  let d;
+  if (t.type === "interval") {
+    const w = t.work, same = w.every(x => x.dur === w[0].dur && x.rest === w[0].rest);
+    d = same ? `${w.length} × ${fmt(w[0].dur)}${w[0].rest ? " / " + fmt(w[0].rest) : ""}` : `${w.length} intervals`;
+    if (t.sets > 1) d += ` · ${t.sets} sets`;
+  } else if (t.type === "countdown") d = fmt(t.duration) + (t.repeat === 0 ? " · repeat ∞" : t.repeat > 1 ? ` × ${t.repeat}` : "");
+  else d = t.hasTarget ? `to ${fmt(t.target)}` + (t.repeat === 0 ? " · repeat ∞" : t.repeat > 1 ? ` × ${t.repeat}` : "") : "Open-ended";
+  return d + (tot != null && t.type !== "countdown" || (tot != null && t.repeat > 1) ? ` · ${fmt(tot)} total` : "");
+}
+
+/* =========================================================
+   Views
+   ========================================================= */
+function show(id) { document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === id)); }
+
+function renderList() {
+  const el = $("#cards");
+  if (!timers.length) {
+    el.innerHTML = `<div class="empty"><b>No timers yet</b>Tap <span style="color:var(--accent)">+</span> to build your first one.</div>`;
+    return;
+  }
+  el.innerHTML = timers.map(t => {
+    const m = TYPE_META[t.type];
+    return `<div class="card" data-id="${t.id}" style="--c:${m.c}">
+      <div class="meta"><div class="tag">${m.tag}</div><div class="name">${esc(t.name || defaultName(t))}</div><div class="sub">${esc(summary(t))}</div></div>
+      <button class="play" data-play="${t.id}" aria-label="Start ${esc(t.name || defaultName(t))}">${ICON.play}</button>
+    </div>`;
+  }).join("");
+}
+const defaultName = t => ({ interval: "Interval timer", countdown: "Countdown", countup: "Count up" }[t.type]);
+
+$("#cards").addEventListener("click", e => {
+  const p = e.target.closest("[data-play]");
+  if (p) return startRun(timers.find(t => t.id === p.dataset.play));
+  const c = e.target.closest(".card");
+  if (c) openEdit(timers.find(t => t.id === c.dataset.id));
+});
+$("#fab").onclick = () => $("#addScrim").classList.add("on");
+document.querySelectorAll(".scrim").forEach(s => s.addEventListener("click", e => { if (e.target === s) s.classList.remove("on"); }));
+document.querySelectorAll("[data-new]").forEach(b => b.onclick = () => {
+  $("#addScrim").classList.remove("on");
+  openEdit(newTimer(b.dataset.new), true);
+});
+
+/* ---------------- Editor ---------------- */
+let draft = null, draftIsNew = false;
+function openEdit(t, isNew = false) {
+  draft = structuredClone(t); draftIsNew = isNew;
+  $("#editTitle").textContent = isNew ? "New " + TYPE_META[t.type].tag.toLowerCase() : "Edit timer";
+  renderEdit(); show("edit"); $("#edit .scroll").scrollTop = 0;
+}
+function getPath(o, p) { return p.split(".").reduce((a, k) => a?.[k], o); }
+function setPath(o, p, v) { const ks = p.split("."), last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; }
+
+function durHTML(path, sec) {
+  return `<div class="dur" data-path="${path}">
+    <button class="step" data-step="-1" aria-label="Less">−</button>
+    <input class="mm" inputmode="numeric" pattern="[0-9]*" value="${Math.floor(sec / 60)}" aria-label="Minutes">
+    <span class="colon">:</span>
+    <input class="ss" inputmode="numeric" pattern="[0-9]*" value="${pad(sec % 60)}" aria-label="Seconds">
+    <button class="step" data-step="1" aria-label="More">+</button></div>`;
+}
+function numHTML(path, v, min, max, fmtFn = x => x) {
+  return `<div class="num" data-path="${path}" data-min="${min}" data-max="${max}">
+    <button data-d="-1" aria-label="Less">−</button><span>${fmtFn(v)}</span><button data-d="1" aria-label="More">+</button></div>`;
+}
+const togHTML = (path, on, rerender = true) =>
+  `<label class="tog"><input type="checkbox" data-path="${path}" ${rerender ? 'data-rr="1"' : ""} ${on ? "checked" : ""}><span></span></label>`;
+const repFmt = v => v === 0 ? "∞" : v;
+
+function renderEdit() {
+  const t = draft;
+  let h = `<div class="group" style="margin-top:8px"><div class="row">
+    <input class="name-in big-name" data-path="name" placeholder="${defaultName(t)}" value="${esc(t.name)}" maxlength="40" aria-label="Timer name"></div></div>`;
+
+  h += `<div class="sec">Start</div><div class="group">
+    <div class="row"><div class="lbl">Prepare<small>Get-ready countdown before starting</small></div>${numHTML("prepare", t.prepare, 0, 60, v => v ? v + "s" : "Off")}</div></div>`;
+
+  if (t.type === "interval") {
+    h += `<div class="sec">Warm up</div><div class="group">
+      <div class="row"><div class="lbl">Warm up</div>${togHTML("warmup.on", t.warmup.on)}</div>
+      ${t.warmup.on ? `<div class="row"><input class="name-in" data-path="warmup.name" placeholder="Warm up" value="${esc(t.warmup.name)}" maxlength="30">${durHTML("warmup.dur", t.warmup.dur)}</div>` : ""}
+    </div>`;
+    h += `<div class="sec">Intervals</div><div class="group">
+      <div class="row"><div class="lbl">Intervals</div>${numHTML("@count", t.work.length, 1, 99)}</div>
+      <div class="row"><div class="lbl">Sets<small>Repeat the whole block</small></div>${numHTML("sets", t.sets, 1, 20)}</div>
+      <div class="row"><div class="lbl">Rest after last interval</div>${togHTML("restAfterLast", t.restAfterLast)}</div></div>`;
+    t.work.forEach((w, i) => {
+      const last = i === t.work.length - 1, showRest = !last || t.restAfterLast || t.sets > 1;
+      h += `<div class="ivl">
+        <div class="row"><span class="bar" style="background:var(--work)"></span>
+          <input class="name-in" data-path="work.${i}.name" placeholder="Work ${i + 1}" value="${esc(w.name)}" maxlength="30" aria-label="Work ${i + 1} name">
+          ${durHTML(`work.${i}.dur`, w.dur)}
+          ${t.work.length > 1 ? `<button class="x" data-del="${i}" aria-label="Remove interval ${i + 1}">${ICON.x}</button>` : ""}</div>
+        ${showRest ? `<div class="row"><span class="bar" style="background:var(--rest)"></span>
+          <input class="name-in" data-path="work.${i}.restName" placeholder="Rest ${i + 1}" value="${esc(w.restName)}" maxlength="30" aria-label="Rest ${i + 1} name">
+          ${durHTML(`work.${i}.rest`, w.rest)}${t.work.length > 1 ? '<span style="width:36px"></span>' : ""}</div>` : ""}
+      </div>`;
+    });
+    h += `<button class="add" id="addIvl">+ Add interval</button>`;
+    h += `<div class="sec">Cool down</div><div class="group">
+      <div class="row"><div class="lbl">Cool down</div>${togHTML("cooldown.on", t.cooldown.on)}</div>
+      ${t.cooldown.on ? `<div class="row"><input class="name-in" data-path="cooldown.name" placeholder="Cool down" value="${esc(t.cooldown.name)}" maxlength="30">${durHTML("cooldown.dur", t.cooldown.dur)}</div>` : ""}
+    </div>`;
+  } else if (t.type === "countdown") {
+    h += `<div class="sec">Countdown</div><div class="group">
+      <div class="row"><div class="lbl">Duration</div>${durHTML("duration", t.duration)}</div>
+      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99, repFmt)}</div></div>`;
+  } else {
+    h += `<div class="sec">Count up</div><div class="group">
+      <div class="row"><div class="lbl">Stop at a target</div>${togHTML("hasTarget", t.hasTarget)}</div>
+      ${t.hasTarget ? `<div class="row"><div class="lbl">Target</div>${durHTML("target", t.target)}</div>
+      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99, repFmt)}</div>` : ""}
+    </div>`;
+  }
+  h += `<div class="total"><span>Total</span><b id="editTotal"></b></div>`;
+  if (!draftIsNew) h += `<button class="danger" id="delTimer">Delete timer</button>`;
+  $("#form").innerHTML = h;
+  updateTotal();
+}
+function updateTotal() {
+  const tot = planTotal(buildPlan(draft));
+  const el = $("#editTotal"); if (el) el.textContent = tot == null ? "∞" : fmt(tot);
+}
+function readDur(box) {
+  const m = parseInt(box.querySelector(".mm").value, 10) || 0;
+  const s = parseInt(box.querySelector(".ss").value, 10) || 0;
+  return clamp(m * 60 + s, 0, 999 * 60 + 59);
+}
+function writeDur(box, sec) {
+  box.querySelector(".mm").value = Math.floor(sec / 60);
+  box.querySelector(".ss").value = pad(sec % 60);
+}
+const stepSize = s => s < 120 ? 5 : s < 600 ? 15 : 60;
+
+$("#form").addEventListener("input", e => {
+  const el = e.target, box = el.closest(".dur");
+  if (box) { el.value = el.value.replace(/\D/g, "").slice(0, 3); setPath(draft, box.dataset.path, readDur(box)); return updateTotal(); }
+  if (el.classList.contains("name-in")) setPath(draft, el.dataset.path, el.value.trim() ? el.value : "");
+});
+$("#form").addEventListener("change", e => {
+  const el = e.target, box = el.closest(".dur");
+  if (box) return writeDur(box, readDur(box));
+  if (el.type === "checkbox") { setPath(draft, el.dataset.path, el.checked); if (el.dataset.rr) renderEdit(); }
+});
+$("#form").addEventListener("click", e => {
+  const st = e.target.closest(".step");
+  if (st) {
+    const box = st.closest(".dur"), cur = readDur(box), d = +st.dataset.step;
+    const size = stepSize(d > 0 ? cur : Math.max(0, cur - 1));
+    const v = clamp(d > 0 ? Math.floor(cur / size) * size + size : Math.ceil(cur / size) * size - size, 0, 999 * 60 + 59);
+    writeDur(box, v); setPath(draft, box.dataset.path, v); return updateTotal();
+  }
+  const nb = e.target.closest(".num button");
+  if (nb) {
+    const box = nb.closest(".num"), p = box.dataset.path, min = +box.dataset.min, max = +box.dataset.max, d = +nb.dataset.d;
+    if (p === "@count") {
+      const n = clamp(draft.work.length + d, min, max);
+      while (draft.work.length < n) { const l = draft.work[draft.work.length - 1]; draft.work.push({ name: "", dur: l.dur, rest: l.rest, restName: "" }); }
+      draft.work.length = n; return renderEdit();
+    }
+    let v = getPath(draft, p);
+    if (p === "prepare") v = clamp(v + d * 5, min, max);
+    else v = clamp(v + d, min, max);
+    setPath(draft, p, v); return renderEdit();
+  }
+  const del = e.target.closest("[data-del]");
+  if (del) { draft.work.splice(+del.dataset.del, 1); return renderEdit(); }
+  if (e.target.id === "addIvl") {
+    const l = draft.work[draft.work.length - 1];
+    draft.work.push({ name: "", dur: l.dur, rest: l.rest, restName: "" }); renderEdit();
+    $("#edit .scroll").scrollTop = 1e6; return;
+  }
+  if (e.target.id === "delTimer") {
+    if (confirm("Delete this timer?")) { timers = timers.filter(t => t.id !== draft.id); saveTimers(); renderList(); show("list"); }
+  }
+});
+$("#cancelEdit").onclick = () => show("list");
+$("#saveEdit").onclick = () => {
+  const plan = buildPlan(draft);
+  if (!plan.segs.some(s => s.kind !== "prep" && (s.dur == null || s.dur > 0))) return toast("Give it at least one interval longer than 0:00");
+  draft.name = draft.name.trim();
+  const i = timers.findIndex(t => t.id === draft.id);
+  if (i >= 0) timers[i] = draft; else timers.unshift(draft);
+  saveTimers(); renderList(); show("list");
+};
+
+/* ---------------- Settings ---------------- */
+function renderSettings() {
+  const s = settings, p = Math.round(s.volume * 100);
+  $("#setSheet").innerHTML = `<div class="grab"></div><h3>Settings</h3>
+  <div class="sec" style="margin-top:6px">Sound</div><div class="group">
+    <div class="row"><div class="lbl" style="flex:none;width:64px">Volume</div>
+      <input type="range" id="vol" min="0" max="100" value="${p}" style="--p:${p}%" aria-label="Volume"><span id="volv" style="width:4ch;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums">${p}%</span></div>
+    <div class="row"><div class="lbl">Interval sounds<small>Chimes, countdown pips</small></div>${togHTML("beeps", s.beeps, false)}</div>
+    <div class="row"><div class="lbl">Voice guidance<small>Announces each interval and what's next</small></div>${togHTML("voice", s.voice)}</div>
+    ${s.voice ? `<div class="row"><div class="lbl">Heads-up<small>Seconds before the next interval</small></div>
+      <div class="seg3" id="lead">${[3, 4, 5].map(n => `<button data-lead="${n}" class="${s.voiceLead === n ? "on" : ""}">${n}s</button>`).join("")}</div></div>` : ""}
+    <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
+    <div class="row"><div class="lbl">Test</div><button class="txt-btn" id="testSound" style="color:var(--text);background:var(--panel2)">Play sample</button></div>
+  </div>
+  <div class="sec">Music</div><div class="group">
+    <div class="row"><div class="lbl">Play my own tracks<small id="musicInfo">${playlist.length ? playlist.length + " track" + (playlist.length > 1 ? "s" : "") + " loaded" : "Ducks under timer cues"}</small></div>
+      <button class="txt-btn" id="pickMusic" style="color:var(--text);background:var(--panel2)">${playlist.length ? "Change" : "Choose"}</button></div>
+  </div>
+  <div class="note">Already playing music in Spotify, Apple Music or a podcast app? Leave it running; timer sounds play over it.</div>
+  <div class="sec">During a workout</div><div class="group">
+    <div class="row"><div class="lbl">Tap anywhere to pause<small>The whole screen acts as the button</small></div>${togHTML("tapAnywhere", s.tapAnywhere, false)}</div>
+    <div class="row"><div class="lbl">Vibration</div>${togHTML("haptics", s.haptics, false)}</div>
+    <div class="row"><div class="lbl">Keep screen on</div>${togHTML("keepAwake", s.keepAwake, false)}</div>
+  </div>
+  ${!("vibrate" in navigator) ? `<div class="note">This browser doesn't support vibration (iPhone Safari blocks it).</div>` : ""}
+  ${!("wakeLock" in navigator) ? `<div class="note">This browser can't keep the screen on; set Auto-Lock to Never during workouts.</div>` : ""}`;
+}
+$("#openSettings").onclick = () => { renderSettings(); $("#setScrim").classList.add("on"); };
+$("#setSheet").addEventListener("input", e => {
+  if (e.target.id === "vol") {
+    const v = +e.target.value; settings.volume = v / 100; saveSettings(); applyVolume();
+    e.target.style.setProperty("--p", v + "%"); $("#volv").textContent = v + "%";
+  }
+});
+$("#setSheet").addEventListener("change", e => {
+  const el = e.target;
+  if (el.type === "checkbox") { settings[el.dataset.path] = el.checked; saveSettings(); if (el.dataset.rr) renderSettings(); }
+});
+$("#setSheet").addEventListener("click", e => {
+  const l = e.target.closest("[data-lead]");
+  if (l) { settings.voiceLead = +l.dataset.lead; saveSettings(); renderSettings(); }
+  if (e.target.id === "testSound") { ensureAudio(); sfx.workStart(); setTimeout(() => speak("Rest in " + settings.voiceLead), 700); setTimeout(() => { sfx.pip(); }, 2400); setTimeout(() => sfx.restStart(), 3400); }
+  if (e.target.id === "pickMusic") $("#musicPick").click();
+});
+
+/* =========================================================
+   Audio: synthesized cues, voice, music ducking
+   ========================================================= */
+let ac = null, master = null, musicGain = null, musicSrc = null;
+function ensureAudio() {
+  try {
+    if (navigator.audioSession) navigator.audioSession.type = "transient"; // play over other apps' audio, briefly ducking it (Safari 17+)
+  } catch {}
+  if (!ac) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    ac = new AC();
+    master = ac.createGain(); master.connect(ac.destination);
+    musicGain = ac.createGain(); musicGain.connect(master);
+  }
+  if (ac.state === "suspended") ac.resume();
+  applyVolume();
+}
+function applyVolume() {
+  if (master) master.gain.setTargetAtTime(settings.volume, ac.currentTime, 0.02);
+}
+function bell(freq, t0, dur = 1.2, peak = 0.35, type = "sine") {
+  const now = ac.currentTime + t0;
+  [[1, peak, type], [2.01, peak * 0.18, "sine"], [3.02, peak * 0.07, "sine"]].forEach(([mul, g, tp]) => {
+    const o = ac.createOscillator(), v = ac.createGain();
+    o.type = tp; o.frequency.value = freq * mul;
+    v.gain.setValueAtTime(0, now);
+    v.gain.linearRampToValueAtTime(g, now + 0.008);
+    v.gain.exponentialRampToValueAtTime(0.0001, now + dur / mul ** 0.5);
+    o.connect(v); v.connect(master); o.start(now); o.stop(now + dur + 0.05);
+  });
+}
+const sfx = {
+  ok: () => ac && settings.beeps && settings.volume > 0,
+  pip()       { if (!this.ok()) return; bell(880, 0, 0.25, 0.32); },
+  workStart() { if (!this.ok()) return; duck(1.2); bell(659.25, 0, 0.9, 0.3, "triangle"); bell(987.77, 0.11, 1.4, 0.32, "triangle"); },
+  restStart() { if (!this.ok()) return; duck(1.2); bell(783.99, 0, 1.0, 0.26); bell(523.25, 0.16, 1.6, 0.26); },
+  phase()     { if (!this.ok()) return; duck(1); bell(698.46, 0, 1.3, 0.28); },
+  pause()     { if (!this.ok()) return; bell(440, 0, 0.18, 0.18); },
+  finish()    { if (!this.ok()) return; duck(2.5); [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => bell(f, i * 0.13, 1.8, 0.24, "triangle")); bell(1318.5, 0.6, 2.4, 0.16); }
+};
+
+let voices = [];
+function pickVoice() {
+  if (!("speechSynthesis" in window)) return null;
+  voices = speechSynthesis.getVoices();
+  const en = voices.filter(v => /^en(-|_|$)/i.test(v.lang));
+  const pref = [/premium|enhanced|natural|neural/i, /samantha|ava|allison|serena|daniel|karen|moira/i, /google us english|google uk english female/i];
+  for (const r of pref) { const v = en.find(v => r.test(v.name)); if (v) return v; }
+  return en.find(v => v.localService) || en[0] || null;
+}
+if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voices = speechSynthesis.getVoices(); };
+function speak(text, delay = 0) {
+  if (!settings.voice || !("speechSynthesis" in window) || settings.volume === 0) return;
+  const go = () => {
+    speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(text);
+    const v = pickVoice(); if (v) u.voice = v;
+    u.rate = 1.04; u.pitch = 1; u.volume = settings.volume;
+    u.onstart = () => duck(0, true); u.onend = u.onerror = () => unduck();
+    speechSynthesis.speak(u);
+  };
+  delay ? setTimeout(go, delay) : go();
+}
+
+/* ---- own-music playback with ducking ---- */
+const musicEl = $("#music");
+let playlist = [], track = 0, unduckT;
+$("#musicPick").onchange = e => {
+  playlist.forEach(u => URL.revokeObjectURL(u));
+  playlist = [...e.target.files].map(f => URL.createObjectURL(f)); track = 0;
+  if (playlist.length) { musicEl.src = playlist[0]; toast(`${playlist.length} track${playlist.length > 1 ? "s" : ""} ready — they play when a timer runs`); }
+  renderSettings(); e.target.value = "";
+};
+musicEl.onended = () => { if (!playlist.length) return; track = (track + 1) % playlist.length; musicEl.src = playlist[track]; musicEl.play().catch(() => {}); };
+function hookMusic() {
+  if (!ac || musicSrc || !playlist.length) return;
+  try { musicSrc = ac.createMediaElementSource(musicEl); musicSrc.connect(musicGain); } catch {}
+}
+function musicPlay() { if (!playlist.length) return; ensureAudio(); hookMusic(); musicEl.play().catch(() => {}); }
+function musicPause() { musicEl.pause(); }
+function duck(sec, hold) {
+  if (!musicGain) return;
+  musicGain.gain.setTargetAtTime(0.22, ac.currentTime, 0.08);
+  clearTimeout(unduckT);
+  if (!hold) unduckT = setTimeout(unduck, sec * 1000);
+}
+function unduck() { if (musicGain) musicGain.gain.setTargetAtTime(1, ac.currentTime, 0.4); }
+
+/* ---- headphone detection (best effort) ---- */
+let outCount = null;
+async function scanOutputs(initial) {
+  if (!navigator.mediaDevices?.enumerateDevices) return;
+  try {
+    const outs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "audiooutput");
+    const named = outs.some(d => /head|ear|bud|airpod|bluetooth|bt |wh-|wf-|beats|jabra|bose/i.test(d.label));
+    const grew = outCount != null && outs.length > outCount;
+    outCount = outs.length;
+    if (settings.headphoneDuck && !initial && (grew || named) && settings.volume > 0.25) {
+      settings.volume = 0.25; saveSettings(); applyVolume();
+      toast("Headphones detected — volume set to 25%");
+      if ($("#setScrim").classList.contains("on")) renderSettings();
+    }
+  } catch {}
+}
+navigator.mediaDevices?.addEventListener?.("devicechange", () => scanOutputs(false));
+scanOutputs(true);
+
+/* ---- haptics & wake lock ---- */
+const buzz = p => { if (settings.haptics && navigator.vibrate) try { navigator.vibrate(p); } catch {} };
+let wake = null;
+async function holdWake() {
+  if (!settings.keepAwake || !("wakeLock" in navigator) || wake) return;
+  try { wake = await navigator.wakeLock.request("screen"); wake.addEventListener("release", () => { wake = null; }); } catch {}
+}
+function dropWake() { try { wake?.release(); } catch {} wake = null; }
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible" && R && !R.done) holdWake(); });
+
+/* =========================================================
+   Runner
+   ========================================================= */
+let R = null, loopId = null;
+const run = $("#run");
+function startRun(t) {
+  ensureAudio();
+  const plan = buildPlan(t);
+  R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0 };
+  $("#runTitle").textContent = t.name || defaultName(t);
+  $("#done").classList.remove("on");
+  show("run");
+  holdWake(); musicPlay();
+  enterSeg(true);
+  renderBottom();
+  clearInterval(loopId); loopId = setInterval(tick, 100);
+  requestAnimationFrame(frame);
+}
+const seg = () => R.plan.segs[R.i];
+function segLabel(s, cycle = R.cycle) { return s.label.replace("#", cycle); }
+function nextSeg() {
+  if (R.i + 1 < R.plan.segs.length) return { s: R.plan.segs[R.i + 1], cycle: R.cycle };
+  if (R.plan.loopFrom != null) return { s: R.plan.segs[R.plan.loopFrom], cycle: R.cycle + 1 };
+  return null;
+}
+function workCount() {
+  const segs = R.plan.segs, main = segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up");
+  if (!main.length) return "";
+  if (R.plan.loopFrom != null) return `#${R.cycle}`;
+  const cur = segs.slice(0, R.i + 1).filter(s => main.includes(s)).length;
+  return `${Math.max(cur, seg().kind === "prep" || seg().kind === "warm" ? 0 : 1)}/${main.length}`;
+}
+
+function enterSeg(first) {
+  const s = seg();
+  R.fired = new Set();
+  run.style.setProperty("--c", KIND_COLOR[s.kind]);
+  $("#phase").textContent = segLabel(s);
+  $("#runCount").textContent = workCount();
+  const d = $("#digits"); d.classList.remove("pulse"); void d.offsetWidth; d.classList.add("pulse");
+  const lbl = segLabel(s), durTxt = s.dur ? spokenDur(s.dur) : "";
+  if (s.kind === "prep") { sfx.phase(); speak("Get ready." + (R.plan.segs[1] ? " First up, " + segLabel(R.plan.segs[1]) : ""), 250); buzz(80); }
+  else if (s.kind === "rest") { sfx.restStart(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz([120, 80, 120]); }
+  else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz(200); }
+  else { sfx.workStart(); speak((first || R.plan.segs[R.i - 1]?.kind === "prep" ? "Go! " : "") + lbl, 450); buzz(300); }
+  updateNext();
+}
+function updateNext() {
+  const n = nextSeg();
+  $("#next").innerHTML = n ? `Next · <b>${esc(segLabel(n.s, n.cycle))}</b>${n.s.dur ? " " + fmt(n.s.dur) : ""}` : (seg().dur == null ? "Tap to pause" : "Final interval");
+}
+function tick() {
+  if (!R || R.done) return;
+  const now = performance.now(), dt = Math.min((now - R.last) / 1000, 5);
+  R.last = now;
+  if (!R.running) return;
+  R.el += dt; R.active += dt;
+  const s = seg();
+  if (s.dur == null) return;
+  const rem = s.dur - R.el;
+  cues(s, rem);
+  if (rem <= 0) advance(Math.min(-rem, 1));
+}
+function cues(s, rem) {
+  const lead = settings.voiceLead, n = nextSeg(), voiceOn = settings.voice && "speechSynthesis" in window;
+  if (voiceOn && !R.fired.has("v") && rem <= lead && s.dur >= lead + 2) {
+    R.fired.add("v");
+    speak(n ? `${segLabel(n.s, n.cycle)} in ${lead}` : `Last ${lead} seconds`);
+  }
+  for (const k of [3, 2, 1]) {
+    if (rem <= k && rem > k - 1 && !R.fired.has("p" + k) && s.dur > k + 0.5) {
+      R.fired.add("p" + k);
+      if (voiceOn && k === lead && s.dur >= lead + 2) continue; // voice is talking on this beat
+      sfx.pip(); buzz(40);
+    }
+  }
+}
+function advance(carry = 0) {
+  R.el = carry;
+  if (R.i + 1 < R.plan.segs.length) R.i++;
+  else if (R.plan.loopFrom != null) { R.i = R.plan.loopFrom; R.cycle++; }
+  else return finish();
+  enterSeg();
+}
+function finish() {
+  R.done = true; R.running = false;
+  sfx.finish(); speak("Workout complete. Nice work.", 900); buzz([300, 120, 300, 120, 600]);
+  dropWake(); musicPause(); unduck();
+  $("#digits").textContent = "0"; $("#digits").className = "short"; $("#bar").style.width = "100%"; $("#fill").style.height = "100%";
+  $("#doneStat").textContent = `${fmt(R.active)} · ${R.plan.segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up").length} intervals`;
+  $("#done").classList.add("on"); renderBottom();
+}
+function frame() {
+  if (!R || !run.classList.contains("on")) return;
+  if (!R.done) {
+    const s = seg(), d = $("#digits");
+    let txt, prog;
+    if (s.dur == null) { txt = fmt(R.el); prog = (R.el % 60) / 60; }
+    else if (s.kind === "up") { txt = fmt(Math.min(R.el, s.dur)); prog = R.el / s.dur; }
+    else { const r = Math.ceil(Math.max(0, s.dur - R.el - 0.001)); txt = r < 60 ? String(r) : fmt(r); prog = R.el / s.dur; }
+    if (d.textContent !== txt) { d.textContent = txt; d.classList.toggle("long", txt.length > 5); d.classList.toggle("short", !txt.includes(":")); }
+    prog = clamp(prog, 0, 1);
+    $("#bar").style.width = (prog * 100).toFixed(2) + "%";
+    $("#fill").style.height = (prog * 100).toFixed(2) + "%";
+  }
+  requestAnimationFrame(frame);
+}
+function togglePause() {
+  if (!R || R.done) return;
+  R.running = !R.running; R.last = performance.now();
+  run.classList.toggle("paused", !R.running);
+  sfx.pause(); buzz(R.running ? 60 : [40, 60, 40]);
+  if (R.running) { holdWake(); musicPlay(); } else { musicPause(); if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+  renderBottom();
+}
+function skip(d) {
+  if (!R || R.done) return;
+  if (d > 0) return advance(0);
+  if (R.el > 2 || R.i === 0) { R.el = 0; R.fired = new Set(); return; }
+  R.i--; R.el = 0; enterSeg();
+}
+function renderBottom() {
+  const b = $("#runBottom");
+  if (!R || R.done) { b.innerHTML = ""; return; }
+  const paused = !R.running;
+  if (settings.tapAnywhere && !paused) { b.innerHTML = `<div class="hint">Tap anywhere to pause</div>`; return; }
+  b.innerHTML = `<div class="ctrls">
+    <button data-act="prev" aria-label="Previous">${ICON.prev}</button>
+    <button class="main" data-act="toggle" aria-label="${paused ? "Resume" : "Pause"}">${paused ? ICON.play : ICON.pause}</button>
+    <button data-act="next" aria-label="Skip">${ICON.next}</button></div>
+    ${paused && settings.tapAnywhere ? `<div class="hint">Tap anywhere to resume · hold ✕ to end</div>` : paused ? `<div class="hint">Hold ✕ to end</div>` : ""}`;
+}
+run.addEventListener("pointerdown", e => {
+  if (!R || R.done) return;
+  const btn = e.target.closest("button");
+  if (btn) return;
+  if (settings.tapAnywhere) { e.preventDefault(); togglePause(); }
+});
+$("#runBottom").addEventListener("click", e => {
+  const a = e.target.closest("[data-act]")?.dataset.act;
+  if (a === "toggle") togglePause(); else if (a === "prev") skip(-1); else if (a === "next") skip(1);
+});
+
+/* hold-to-exit: needs a 0.7s press while running so a stray tap can't end a workout */
+const ex = $("#exitRun"); let exT = null;
+ex.addEventListener("pointerdown", e => {
+  e.preventDefault();
+  if (!R || R.done) return endRun();
+  ex.classList.add("charging");
+  exT = setTimeout(endRun, 700);
+});
+["pointerup", "pointerleave", "pointercancel"].forEach(ev => ex.addEventListener(ev, () => { clearTimeout(exT); ex.classList.remove("charging"); }));
+function endRun() {
+  clearTimeout(exT); ex.classList.remove("charging");
+  clearInterval(loopId);
+  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  dropWake(); musicPause(); unduck();
+  run.classList.remove("paused");
+  R = null; show("list");
+}
+$("#doneClose").onclick = endRun;
+$("#doneAgain").onclick = () => { const t = R.t; endRun(); startRun(t); };
+
+/* keyboard: space = pause, arrows = skip, esc = exit */
+document.addEventListener("keydown", e => {
+  if (!run.classList.contains("on") || !R) return;
+  if (e.code === "Space") { e.preventDefault(); togglePause(); }
+  else if (e.code === "ArrowRight") skip(1);
+  else if (e.code === "ArrowLeft") skip(-1);
+  else if (e.code === "Escape") endRun();
+});
+
+renderList();
+</script>
+</body>
+</html>
