@@ -17,7 +17,23 @@
   --prep:#f5b94a; --warm:#a78bfa; --work:#ff6b4a; --rest:#34d399; --cool:#60a5fa; --count:#ff6b4a; --up:#e879f9;
   --r:18px;
   --safe-t:env(safe-area-inset-top,0px); --safe-b:env(safe-area-inset-bottom,0px);
+  --shadow:none; --knob:0 1px 3px rgba(0,0,0,.3);
 }
+:root[data-theme="light"]{
+  --bg:#f3f4f7; --panel:#ffffff; --panel2:#f3f4f7; --line:#e4e6eb;
+  --text:#121418; --muted:#6b717c; --faint:#a0a6b0; --accent:#f2603e;
+  --rest:#16b980; --prep:#e9a325;
+  --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 14px rgba(16,24,40,.05);
+}
+@media (prefers-color-scheme:light){
+  :root:not([data-theme="dark"]){
+    --bg:#f3f4f7; --panel:#ffffff; --panel2:#f3f4f7; --line:#e4e6eb;
+    --text:#121418; --muted:#6b717c; --faint:#a0a6b0; --accent:#f2603e;
+    --rest:#16b980; --prep:#e9a325;
+    --shadow:0 1px 2px rgba(16,24,40,.04),0 4px 14px rgba(16,24,40,.05);
+  }
+}
+.card,.group,.ivl{box-shadow:var(--shadow)}
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{margin:0;height:100%;background:var(--bg);color:var(--text);
   font-family:"SF Pro Display",-apple-system,BlinkMacSystemFont,"Segoe UI Variable","Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
@@ -91,7 +107,7 @@ input{font:inherit;color:inherit}
 .tog{position:relative;width:52px;height:32px;flex:none}
 .tog input{opacity:0;position:absolute;inset:0;margin:0;cursor:pointer;z-index:1}
 .tog span{position:absolute;inset:0;border-radius:16px;background:var(--line);transition:.2s}
-.tog span::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s}
+.tog span::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:.2s;box-shadow:var(--knob)}
 .tog input:checked+span{background:var(--rest)}
 .tog input:checked+span::after{transform:translateX(20px)}
 .ivl{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin:10px 0;overflow:hidden}
@@ -112,6 +128,16 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .seg3{display:flex;background:var(--panel2);border-radius:12px;padding:3px;border:1px solid var(--line)}
 .seg3 button{padding:8px 14px;border-radius:9px;color:var(--muted);font-variant-numeric:tabular-nums}
 .seg3 button.on{background:var(--text);color:var(--bg);font-weight:600}
+.startbar{position:fixed;left:16px;right:16px;bottom:calc(16px + var(--safe-b));max-width:608px;margin:0 auto;height:64px;border-radius:20px;
+  background:var(--text);color:var(--bg);display:flex;align-items:center;gap:14px;padding:0 22px;font-weight:700;font-size:18px;z-index:5;
+  box-shadow:0 12px 30px rgba(0,0,0,.22);transition:transform .15s}
+.startbar:active{transform:scale(.98)}
+.startbar svg{width:18px;height:18px}
+.startbar span{flex:1;text-align:left}
+.startbar b{font-variant-numeric:tabular-nums;opacity:.55;font-weight:600}
+.btnrow{display:flex;gap:10px;margin-top:26px}
+.btnrow button{flex:1;padding:15px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);font-weight:600;box-shadow:var(--shadow)}
+.btnrow .del{color:#e5484d}
 .note{color:var(--faint);font-size:13px;line-height:1.5;padding:10px 4px 0}
 
 /* ---------- run ---------- */
@@ -189,7 +215,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <button class="txt-btn primary" id="saveEdit">Save</button>
   </header>
   <div class="scroll"><div class="wrap" id="form"></div></div>
+  <button class="startbar" id="startEdit"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg><span>Save &amp; start</span><b id="editTotal"></b></button>
 </section>
+<input type="file" id="importPick" accept="application/json,.json" hidden>
 
 <!-- ============ RUN ============ -->
 <section id="run" class="view">
@@ -297,8 +325,8 @@ const TYPE_META = {
    State
    ========================================================= */
 const DEFAULT_SETTINGS = {
-  volume: 0.8, voice: true, voiceLead: 5, beeps: true, haptics: true,
-  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false
+  volume: 0.8, voice: true, voiceLead: 3, beeps: true, haptics: true,
+  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: true, theme: "system"
 };
 let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
 const saveSettings = () => store.set("cadence.settings", settings);
@@ -306,7 +334,7 @@ const saveSettings = () => store.set("cadence.settings", settings);
 function newTimer(type) {
   const base = { id: uid(), type, name: "", prepare: 10 };
   if (type === "interval") return { ...base, warmup: { on: false, dur: 300, name: "" }, cooldown: { on: false, dur: 300, name: "" },
-    work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1 };
+    work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1, setRest: { on: false, dur: 60, name: "" } };
   if (type === "countdown") return { ...base, duration: 60, repeat: 1 };
   return { ...base, prepare: 0, hasTarget: false, target: 300, repeat: 1 };
 }
@@ -316,7 +344,17 @@ function samples() {
   const plank = newTimer("countdown"); plank.name = "Plank hold"; plank.duration = 60; plank.repeat = 3; plank.prepare = 5;
   return [tab, plank];
 }
-let timers = store.get("cadence.timers", null) || samples();
+function normalize(t) {
+  if (!t || !TYPE_META[t.type]) return null;
+  const n = { ...newTimer(t.type), ...t };
+  if (n.type === "interval") {
+    n.warmup = { on: false, dur: 300, name: "", ...t.warmup }; n.cooldown = { on: false, dur: 300, name: "", ...t.cooldown };
+    n.setRest = { on: false, dur: 60, name: "", ...t.setRest };
+    n.work = (Array.isArray(t.work) && t.work.length ? t.work : [{}]).map(w => ({ name: "", dur: 40, rest: 20, restName: "", ...w }));
+  }
+  return n;
+}
+let timers = (store.get("cadence.timers", null) || samples()).map(normalize).filter(Boolean);
 const saveTimers = () => store.set("cadence.timers", timers);
 
 /* =========================================================
@@ -332,9 +370,10 @@ function buildPlan(t) {
     for (let s = 0; s < sets; s++) {
       t.work.forEach((w, i) => {
         const setTag = sets > 1 ? `Set ${s + 1}/${sets}` : "";
-        segs.push({ kind: "work", label: w.name || `Work ${i + 1}`, dur: w.dur, sub: setTag });
-        const last = s === sets - 1 && i === n - 1;
-        if (w.rest > 0 && (!last || t.restAfterLast)) segs.push({ kind: "rest", label: w.restName || `Rest ${i + 1}`, dur: w.rest, sub: setTag });
+        segs.push({ kind: "work", label: w.name || `Work ${i + 1}`, say: w.name || "Work", dur: w.dur, sub: setTag });
+        const lastInSet = i === n - 1, last = s === sets - 1 && lastInSet;
+        if (lastInSet && !last && t.setRest.on) { if (t.setRest.dur > 0) segs.push({ kind: "rest", label: t.setRest.name || "Set rest", say: t.setRest.name || "Rest", dur: t.setRest.dur, setBreak: true }); }
+        else if (w.rest > 0 && (!last || t.restAfterLast)) segs.push({ kind: "rest", label: w.restName || `Rest ${i + 1}`, say: w.restName || "Rest", dur: w.rest, sub: setTag });
       });
     }
     if (t.cooldown.on && t.cooldown.dur > 0) segs.push({ kind: "cool", label: t.cooldown.name || "Cool down", dur: t.cooldown.dur });
@@ -444,6 +483,8 @@ function renderEdit() {
     h += `<div class="sec">Intervals</div><div class="group">
       <div class="row"><div class="lbl">Intervals</div>${numHTML("@count", t.work.length, 1, 99)}</div>
       <div class="row"><div class="lbl">Sets<small>Repeat the whole block</small></div>${numHTML("sets", t.sets, 1, 20)}</div>
+      ${t.sets > 1 ? `<div class="row"><div class="lbl">Rest between sets<small>Replaces the last rest of each set</small></div>${togHTML("setRest.on", t.setRest.on)}</div>
+      ${t.setRest.on ? `<div class="row"><input class="name-in" data-path="setRest.name" placeholder="Set rest" value="${esc(t.setRest.name)}" maxlength="30" aria-label="Set rest name">${durHTML("setRest.dur", t.setRest.dur)}</div>` : ""}` : ""}
       <div class="row"><div class="lbl">Rest after last interval</div>${togHTML("restAfterLast", t.restAfterLast)}</div></div>`;
     t.work.forEach((w, i) => {
       const last = i === t.work.length - 1, showRest = !last || t.restAfterLast || t.sets > 1;
@@ -473,8 +514,7 @@ function renderEdit() {
       <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99, repFmt)}</div>` : ""}
     </div>`;
   }
-  h += `<div class="total"><span>Total</span><b id="editTotal"></b></div>`;
-  if (!draftIsNew) h += `<button class="danger" id="delTimer">Delete timer</button>`;
+  if (!draftIsNew) h += `<div class="btnrow"><button id="dupTimer">Duplicate</button><button class="del" id="delTimer">Delete</button></div>`;
   $("#form").innerHTML = h;
   updateTotal();
 }
@@ -531,19 +571,26 @@ $("#form").addEventListener("click", e => {
     draft.work.push({ name: "", dur: l.dur, rest: l.rest, restName: "" }); renderEdit();
     $("#edit .scroll").scrollTop = 1e6; return;
   }
+  if (e.target.id === "dupTimer") {
+    const c = structuredClone(draft); c.id = uid(); c.name = (draft.name || defaultName(draft)) + " copy";
+    timers.splice(timers.findIndex(t => t.id === draft.id) + 1, 0, c); saveTimers(); renderList();
+    openEdit(c); return toast("Duplicated");
+  }
   if (e.target.id === "delTimer") {
     if (confirm("Delete this timer?")) { timers = timers.filter(t => t.id !== draft.id); saveTimers(); renderList(); show("list"); }
   }
 });
 $("#cancelEdit").onclick = () => show("list");
-$("#saveEdit").onclick = () => {
+function commitDraft() {
   const plan = buildPlan(draft);
-  if (!plan.segs.some(s => s.kind !== "prep" && (s.dur == null || s.dur > 0))) return toast("Give it at least one interval longer than 0:00");
+  if (!plan.segs.some(s => s.kind !== "prep" && (s.dur == null || s.dur > 0))) { toast("Give it at least one interval longer than 0:00"); return null; }
   draft.name = draft.name.trim();
   const i = timers.findIndex(t => t.id === draft.id);
   if (i >= 0) timers[i] = draft; else timers.unshift(draft);
-  saveTimers(); renderList(); show("list");
-};
+  saveTimers(); renderList(); return draft;
+}
+$("#saveEdit").onclick = () => { if (commitDraft()) show("list"); };
+$("#startEdit").onclick = () => { const t = commitDraft(); if (t) startRun(t); };
 
 /* ---------------- Settings ---------------- */
 function renderSettings() {
@@ -554,7 +601,8 @@ function renderSettings() {
       <input type="range" id="vol" min="0" max="100" value="${p}" style="--p:${p}%" aria-label="Volume"><span id="volv" style="width:4ch;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums">${p}%</span></div>
     <div class="row"><div class="lbl">Interval sounds<small>Chimes, countdown pips</small></div>${togHTML("beeps", s.beeps, false)}</div>
     <div class="row"><div class="lbl">Voice guidance<small>Announces each interval and what's next</small></div>${togHTML("voice", s.voice)}</div>
-    ${s.voice ? `<div class="row"><div class="lbl">Heads-up<small>Seconds before the next interval</small></div>
+    ${s.voice ? `<div class="row"><div class="lbl">Playful phrases<small>Mixes up the encouragement</small></div>${togHTML("playful", s.playful, false)}</div>
+    <div class="row"><div class="lbl">Count-in<small>"Rest in 3… 2… 1"</small></div>
       <div class="seg3" id="lead">${[3, 4, 5].map(n => `<button data-lead="${n}" class="${s.voiceLead === n ? "on" : ""}">${n}s</button>`).join("")}</div></div>` : ""}
     <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
     <div class="row"><div class="lbl">Test</div><button class="txt-btn" id="testSound" style="color:var(--text);background:var(--panel2)">Play sample</button></div>
@@ -568,6 +616,13 @@ function renderSettings() {
     <div class="row"><div class="lbl">Tap anywhere to pause<small>The whole screen acts as the button</small></div>${togHTML("tapAnywhere", s.tapAnywhere, false)}</div>
     <div class="row"><div class="lbl">Vibration</div>${togHTML("haptics", s.haptics, false)}</div>
     <div class="row"><div class="lbl">Keep screen on</div>${togHTML("keepAwake", s.keepAwake, false)}</div>
+  </div>
+  <div class="sec">Appearance</div><div class="group">
+    <div class="row"><div class="lbl">Theme</div><div class="seg3" id="theme">${["system", "light", "dark"].map(m => `<button data-theme="${m}" class="${s.theme === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
+  </div>
+  <div class="sec">Your timers</div><div class="group">
+    <div class="row"><div class="lbl">Back up<small>${timers.length} timer${timers.length === 1 ? "" : "s"} · saved on this device automatically</small></div><button class="txt-btn" id="exportT" style="color:var(--text);background:var(--panel2)">Export</button></div>
+    <div class="row"><div class="lbl">Restore / share<small>Add timers from an exported file</small></div><button class="txt-btn" id="importT" style="color:var(--text);background:var(--panel2)">Import</button></div>
   </div>
   ${!("vibrate" in navigator) ? `<div class="note">This browser doesn't support vibration (iPhone Safari blocks it).</div>` : ""}
   ${!("wakeLock" in navigator) ? `<div class="note">This browser can't keep the screen on; set Auto-Lock to Never during workouts.</div>` : ""}`;
@@ -588,6 +643,10 @@ $("#setSheet").addEventListener("click", e => {
   if (l) { settings.voiceLead = +l.dataset.lead; saveSettings(); renderSettings(); }
   if (e.target.id === "testSound") { ensureAudio(); sfx.workStart(); setTimeout(() => speak("Rest in " + settings.voiceLead), 700); setTimeout(() => { sfx.pip(); }, 2400); setTimeout(() => sfx.restStart(), 3400); }
   if (e.target.id === "pickMusic") $("#musicPick").click();
+  const th = e.target.closest("[data-theme]");
+  if (th) { settings.theme = th.dataset.theme; saveSettings(); applyTheme(); renderSettings(); }
+  if (e.target.id === "exportT") exportTimers();
+  if (e.target.id === "importT") $("#importPick").click();
 });
 
 /* =========================================================
@@ -741,6 +800,16 @@ function workCount() {
   return `${Math.max(cur, seg().kind === "prep" || seg().kind === "warm" ? 0 : 1)}/${main.length}`;
 }
 
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const PHRASES = {
+  work: ["Begin. {n}", "{n}. Let's go.", "{n}. Make it count.", "{n}. You've got this.", "{n}. Strong and steady.", "{n}. Future you says thanks."],
+  rest: ["Relax for {d}", "Breathe. {d} of rest.", "Shake it out. {d}.", "Recover for {d}. You earned it.", "{d} to rest. Hydrate if you're fancy.", "Rest for {d}. Try not to lie on the floor."],
+  done: ["Workout complete. Nice work.", "That's a wrap. Well done.", "Done. Go admire yourself in a mirror.", "Workout complete. Your couch is proud of you.", "Finished. Legend behaviour."]
+};
+const phrase = (kind, n, d) => (settings.playful ? pick(PHRASES[kind]) : PHRASES[kind][0]).replace("{n}", n).replace("{d}", d);
+const sayOf = s => s.say || s.label.replace("#", R ? R.cycle : "");
+const NUM = ["zero", "one", "two", "three", "four", "five"];
+
 function enterSeg(first) {
   const s = seg();
   R.fired = new Set();
@@ -749,10 +818,11 @@ function enterSeg(first) {
   $("#runCount").textContent = workCount();
   const d = $("#digits"); d.classList.remove("pulse"); void d.offsetWidth; d.classList.add("pulse");
   const lbl = segLabel(s), durTxt = s.dur ? spokenDur(s.dur) : "";
-  if (s.kind === "prep") { sfx.phase(); speak("Get ready." + (R.plan.segs[1] ? " First up, " + segLabel(R.plan.segs[1]) : ""), 250); buzz(80); }
-  else if (s.kind === "rest") { sfx.restStart(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz([120, 80, 120]); }
+  if (s.kind === "prep") { sfx.phase(); speak("Get ready." + (R.plan.segs[1] ? " First up, " + sayOf(R.plan.segs[1]) : ""), 250); buzz(80); }
+  else if (s.kind === "rest") { sfx.restStart(); speak((s.say && s.say !== "Rest" ? s.say + ". " : "") + phrase("rest", "", durTxt), 600); buzz([120, 80, 120]); }
   else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz(200); }
-  else { sfx.workStart(); speak((first || R.plan.segs[R.i - 1]?.kind === "prep" ? "Go! " : "") + lbl, 450); buzz(300); }
+  else { sfx.workStart(); const opener = first || R.plan.segs[R.i - 1]?.kind === "prep" || R.plan.segs[R.i - 1]?.kind === "warm";
+    speak(opener ? "Begin. " + sayOf(s) : phrase("work", sayOf(s)), 450); buzz(300); }
   updateNext();
 }
 function updateNext() {
@@ -773,15 +843,13 @@ function tick() {
 }
 function cues(s, rem) {
   const lead = settings.voiceLead, n = nextSeg(), voiceOn = settings.voice && "speechSynthesis" in window;
-  if (voiceOn && !R.fired.has("v") && rem <= lead && s.dur >= lead + 2) {
-    R.fired.add("v");
-    speak(n ? `${segLabel(n.s, n.cycle)} in ${lead}` : `Last ${lead} seconds`);
-  }
-  for (const k of [3, 2, 1]) {
-    if (rem <= k && rem > k - 1 && !R.fired.has("p" + k) && s.dur > k + 0.5) {
-      R.fired.add("p" + k);
-      if (voiceOn && k === lead && s.dur >= lead + 2) continue; // voice is talking on this beat
-      sfx.pip(); buzz(40);
+  const counting = voiceOn && s.dur >= lead + 2;
+  // spoken count: "Rest in 3 ... 2 ... 1" (each number on its own beat so it stays in sync)
+  for (let k = lead; k >= 1; k--) {
+    if (rem <= k && rem > k - 1 && !R.fired.has("c" + k)) {
+      R.fired.add("c" + k);
+      if (counting) speak(k === lead ? (n ? `${n.s.say || segLabel(n.s, n.cycle)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`) : NUM[k]);
+      if (k <= 3) { if (!counting && s.dur > k + 0.5) sfx.pip(); buzz(40); }
     }
   }
 }
@@ -794,7 +862,7 @@ function advance(carry = 0) {
 }
 function finish() {
   R.done = true; R.running = false;
-  sfx.finish(); speak("Workout complete. Nice work.", 900); buzz([300, 120, 300, 120, 600]);
+  sfx.finish(); speak(phrase("done"), 900); buzz([300, 120, 300, 120, 600]);
   dropWake(); musicPause(); unduck();
   $("#digits").textContent = "0"; $("#digits").className = "short"; $("#bar").style.width = "100%"; $("#fill").style.height = "100%";
   $("#doneStat").textContent = `${fmt(R.active)} · ${R.plan.segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up").length} intervals`;
@@ -880,6 +948,30 @@ document.addEventListener("keydown", e => {
   else if (e.code === "Escape") endRun();
 });
 
+function applyTheme() {
+  const r = document.documentElement;
+  if (settings.theme === "system") delete r.dataset.theme; else r.dataset.theme = settings.theme;
+  const light = settings.theme === "light" || (settings.theme === "system" && matchMedia("(prefers-color-scheme: light)").matches);
+  document.querySelector('meta[name="theme-color"]').content = light ? "#f3f4f7" : "#0c0d10";
+}
+matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyTheme);
+function exportTimers() {
+  const blob = new Blob([JSON.stringify({ app: "cadence", version: 1, timers }, null, 2)], { type: "application/json" });
+  const a = document.createElement("a"), d = new Date();
+  a.href = URL.createObjectURL(blob); a.download = `cadence-timers-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+$("#importPick").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = ""; if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    const list = (Array.isArray(data) ? data : data.timers || []).map(normalize).filter(Boolean).map(t => ({ ...t, id: uid() }));
+    if (!list.length) return toast("No timers found in that file");
+    timers.push(...list); saveTimers(); renderList(); renderSettings();
+    toast(`Imported ${list.length} timer${list.length > 1 ? "s" : ""}`);
+  } catch { toast("Couldn't read that file"); }
+};
+applyTheme();
 renderList();
 </script>
 </body>
