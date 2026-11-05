@@ -113,7 +113,7 @@ input{font:inherit;color:inherit}
 .ivl{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);margin:10px 0;overflow:hidden}
 .ivl .row{min-height:52px}
 .ivl .bar{width:4px;align-self:stretch;border-radius:2px;flex:none}
-.ivl .x{width:36px;height:36px;border-radius:50%;color:var(--faint);display:grid;place-items:center}
+.ivl .x{width:36px;height:36px;flex:none;border-radius:50%;color:var(--faint);display:grid;place-items:center}
 .ivl .x svg{width:16px;height:16px}
 .add{width:100%;padding:16px;border-radius:var(--r);border:1.5px dashed var(--line);color:var(--muted);font-weight:600;margin-top:4px}
 .danger{width:100%;padding:16px;border-radius:var(--r);color:#ff6b6b;background:var(--panel);border:1px solid var(--line);margin-top:26px;font-weight:600}
@@ -181,7 +181,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .done .acts{display:flex;gap:12px;margin-top:22px}
 .done .acts button{padding:16px 28px;border-radius:30px;font-weight:700;font-size:17px;background:rgba(255,255,255,.12)}
 .done .acts button.primary{background:#fff;color:#000}
-.toast{position:fixed;left:50%;top:calc(16px + var(--safe-t));transform:translate(-50%,-30px);opacity:0;background:var(--panel2);border:1px solid var(--line);
+.toast{position:fixed;left:50%;top:calc(16px + var(--safe-t));transform:translate(-50%,-30px);opacity:0;background:var(--text);color:var(--bg);font-weight:600;white-space:nowrap;box-shadow:0 8px 24px rgba(0,0,0,.25);
   padding:12px 18px;border-radius:24px;font-size:14px;z-index:50;transition:.3s;pointer-events:none;max-width:calc(100% - 32px);text-align:center}
 .toast.on{transform:translate(-50%,0);opacity:1}
 @media (orientation:landscape) and (max-height:520px){
@@ -312,6 +312,7 @@ const ICON = {
   pause: '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4.2" height="16" rx="1.2"/><rect x="13.8" y="4" width="4.2" height="16" rx="1.2"/></svg>',
   prev:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M6 5h2v14H6zM20 5.5v13a.8.8 0 0 1-1.25.66L9.5 12.66a.8.8 0 0 1 0-1.32l9.25-6.5A.8.8 0 0 1 20 5.5z"/></svg>',
   next:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5.5v13a.8.8 0 0 0 1.25.66l9.25-6.5a.8.8 0 0 0 0-1.32L5.25 4.84A.8.8 0 0 0 4 5.5z"/></svg>',
+  copy:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>',
   x:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
 };
 const KIND_COLOR = { prep:"var(--prep)", warm:"var(--warm)", work:"var(--work)", rest:"var(--rest)", cool:"var(--cool)", count:"var(--count)", up:"var(--up)" };
@@ -488,17 +489,20 @@ function renderEdit() {
       <div class="row"><div class="lbl">Rest after last interval</div>${togHTML("restAfterLast", t.restAfterLast)}</div></div>`;
     t.work.forEach((w, i) => {
       const last = i === t.work.length - 1, showRest = !last || t.restAfterLast || t.sets > 1;
+      const delBtn = t.work.length > 1 ? `<button class="x" data-del="${i}" aria-label="Remove interval ${i + 1}">${ICON.x}</button>` : "";
       h += `<div class="ivl">
         <div class="row"><span class="bar" style="background:var(--work)"></span>
           <input class="name-in" data-path="work.${i}.name" placeholder="Work ${i + 1}" value="${esc(w.name)}" maxlength="30" aria-label="Work ${i + 1} name">
           ${durHTML(`work.${i}.dur`, w.dur)}
-          ${t.work.length > 1 ? `<button class="x" data-del="${i}" aria-label="Remove interval ${i + 1}">${ICON.x}</button>` : ""}</div>
+          <button class="x" data-dup="${i}" aria-label="Duplicate interval ${i + 1}">${ICON.copy}</button>
+</div>
         ${showRest ? `<div class="row"><span class="bar" style="background:var(--rest)"></span>
           <input class="name-in" data-path="work.${i}.restName" placeholder="Rest ${i + 1}" value="${esc(w.restName)}" maxlength="30" aria-label="Rest ${i + 1} name">
-          ${durHTML(`work.${i}.rest`, w.rest)}${t.work.length > 1 ? '<span style="width:36px"></span>' : ""}</div>` : ""}
+          ${durHTML(`work.${i}.rest`, w.rest)}${delBtn || '<span style="width:36px;flex:none"></span>'}</div>`
+        : delBtn ? `<div class="row"><span class="bar" style="background:var(--line)"></span><div class="lbl" style="color:var(--faint);font-size:14px">Last interval · no rest after</div>${delBtn}</div>` : ""}
       </div>`;
     });
-    h += `<button class="add" id="addIvl">+ Add interval</button>`;
+    h += `<div style="display:flex;gap:10px"><button class="add" id="addIvl">+ Add interval</button>${t.work.length > 1 ? `<button class="add" id="dupAll">⧉ Duplicate all</button>` : ""}</div>`;
     h += `<div class="sec">Cool down</div><div class="group">
       <div class="row"><div class="lbl">Cool down</div>${togHTML("cooldown.on", t.cooldown.on)}</div>
       ${t.cooldown.on ? `<div class="row"><input class="name-in" data-path="cooldown.name" placeholder="Cool down" value="${esc(t.cooldown.name)}" maxlength="30">${durHTML("cooldown.dur", t.cooldown.dur)}</div>` : ""}
@@ -563,6 +567,15 @@ $("#form").addEventListener("click", e => {
     if (p === "prepare") v = clamp(v + d * 5, min, max);
     else v = clamp(v + d, min, max);
     setPath(draft, p, v); return renderEdit();
+  }
+  const dup = e.target.closest("[data-dup]");
+  if (dup) {
+    const i = +dup.dataset.dup; if (draft.work.length >= 99) return toast("99 intervals max");
+    draft.work.splice(i + 1, 0, { ...draft.work[i] }); renderEdit(); return toast(`Interval ${i + 1} duplicated`);
+  }
+  if (e.target.id === "dupAll") {
+    const n = draft.work.length; if (n * 2 > 99) return toast("99 intervals max — try Sets instead");
+    draft.work.push(...draft.work.map(w => ({ ...w }))); renderEdit(); return toast(`Added ${n} more intervals`);
   }
   const del = e.target.closest("[data-del]");
   if (del) { draft.work.splice(+del.dataset.del, 1); return renderEdit(); }
