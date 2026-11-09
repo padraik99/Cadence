@@ -137,7 +137,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   box-shadow:0 12px 30px rgba(0,0,0,.22);transition:transform .15s}
 .startbar:active{transform:scale(.98)}
 .startbar svg{width:18px;height:18px}
-.startbar span{flex:1;text-align:left}
+.startbar>span{flex:1;text-align:left;display:flex;flex-direction:column;line-height:1.15}
+.startbar small{font-size:12px;font-weight:500;opacity:.55}
+.startbar small:empty{display:none}
 .startbar b{font-variant-numeric:tabular-nums;opacity:.55;font-weight:600}
 .btnrow{display:flex;gap:10px;margin-top:26px}
 .btnrow button{flex:1;padding:15px;border-radius:var(--r);background:var(--panel);border:1px solid var(--line);font-weight:600;box-shadow:var(--shadow)}
@@ -236,7 +238,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     <button class="txt-btn primary" id="saveEdit">Save</button>
   </header>
   <div class="scroll"><div class="wrap" id="form"></div></div>
-  <button class="startbar" id="startEdit"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg><span>Save &amp; start</span><b id="editTotal"></b></button>
+  <button class="startbar" id="startEdit"><svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"/></svg><span><span id="startLbl">Save &amp; start</span><small id="startHint"></small></span><b id="editTotal"></b></button>
 </section>
 <input type="file" id="importPick" accept="application/json,.json" hidden>
 
@@ -350,7 +352,7 @@ const TYPE_META = {
    ========================================================= */
 const DEFAULT_SETTINGS = {
   volume: 0.8, voice: true, voiceLead: 3, beeps: true, haptics: true,
-  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: true, theme: "system", voiceURI: "", pace: "normal", tone: "natural"
+  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: false, theme: "system", voiceURI: "", pace: "normal", tone: "natural"
 };
 let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
 const saveSettings = () => store.set("cadence.settings", settings);
@@ -358,9 +360,10 @@ const saveSettings = () => store.set("cadence.settings", settings);
 function newTimer(type) {
   const base = { id: uid(), type, name: "", prepare: 10 };
   if (type === "interval") return { ...base, warmup: { on: false, dur: 300, name: "" }, cooldown: { on: false, dur: 300, name: "" },
-    work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1, setRest: { on: false, dur: 60, name: "" } };
-  if (type === "countdown") return { ...base, duration: 60, repeat: 1 };
-  return { ...base, prepare: 0, hasTarget: false, target: 300, repeat: 1 };
+    work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1, setRest: { on: false, dur: 60, name: "", hold: false } };
+  const between = { on: false, dur: 30, name: "", hold: false };
+  if (type === "countdown") return { ...base, duration: 60, repeat: 1, between };
+  return { ...base, prepare: 0, hasTarget: false, target: 300, repeat: 1, between };
 }
 function samples() {
   const tab = newTimer("interval");
@@ -373,9 +376,10 @@ function normalize(t) {
   const n = { ...newTimer(t.type), ...t };
   if (n.type === "interval") {
     n.warmup = { on: false, dur: 300, name: "", ...t.warmup }; n.cooldown = { on: false, dur: 300, name: "", ...t.cooldown };
-    n.setRest = { on: false, dur: 60, name: "", ...t.setRest };
+    n.setRest = { on: false, dur: 60, name: "", hold: false, ...t.setRest };
     n.work = (Array.isArray(t.work) && t.work.length ? t.work : [{}]).map(w => ({ name: "", dur: 40, rest: 20, restName: "", ...w }));
   }
+  else n.between = { on: false, dur: 30, name: "", hold: false, ...t.between };
   return n;
 }
 let timers = (store.get("cadence.timers", null) || samples()).map(normalize).filter(Boolean);
@@ -384,6 +388,12 @@ const saveTimers = () => store.set("cadence.timers", timers);
 /* =========================================================
    Plan: timer definition -> list of segments
    ========================================================= */
+/* a rest between rounds/sets: timed, or open-ended until tapped (then a 3 s "Get set") */
+function restSegs(r, fallback) {
+  const name = r.name || fallback;
+  if (r.hold) return [{ kind: "rest", label: name, say: r.name || "Rest", cue: "Rest", dur: null, hold: true }, { kind: "prep", label: "Get set", dur: 3, auto: true }];
+  return r.dur > 0 ? [{ kind: "rest", label: name, say: r.name || "Rest", cue: "Rest", dur: r.dur }] : [];
+}
 function buildPlan(t) {
   const segs = [];
   if (t.prepare > 0) segs.push({ kind: "prep", label: "Get ready", dur: t.prepare });
@@ -394,31 +404,38 @@ function buildPlan(t) {
     for (let s = 0; s < sets; s++) {
       t.work.forEach((w, i) => {
         const setTag = sets > 1 ? `Set ${s + 1}/${sets}` : "";
-        segs.push({ kind: "work", label: w.name || `Work ${i + 1}`, say: w.name || "Work", dur: w.dur, sub: setTag });
+        segs.push({ kind: "work", label: w.name || `Work ${i + 1}`, say: `Work ${i + 1}` + (w.name ? `: ${w.name}` : ""), cue: "Work", dur: w.dur, sub: setTag });
         const lastInSet = i === n - 1, last = s === sets - 1 && lastInSet;
-        if (lastInSet && !last && t.setRest.on) { if (t.setRest.dur > 0) segs.push({ kind: "rest", label: t.setRest.name || "Set rest", say: t.setRest.name || "Rest", dur: t.setRest.dur, setBreak: true }); }
-        else if (w.rest > 0 && (!last || t.restAfterLast)) segs.push({ kind: "rest", label: w.restName || `Rest ${i + 1}`, say: w.restName || "Rest", dur: w.rest, sub: setTag });
+        if (lastInSet && !last && t.setRest.on) segs.push(...restSegs(t.setRest, "Set rest"));
+        else if (w.rest > 0 && (!last || t.restAfterLast)) segs.push({ kind: "rest", label: w.restName || `Rest ${i + 1}`, say: w.restName || "Rest", cue: "Rest", dur: w.rest, sub: setTag });
       });
     }
     if (t.cooldown.on && t.cooldown.dur > 0) segs.push({ kind: "cool", label: t.cooldown.name || "Cool down", dur: t.cooldown.dur });
   } else if (t.type === "countdown") {
-    const n = t.repeat;
-    if (n === 0) { loopFrom = segs.length; segs.push({ kind: "count", label: (t.name || "Round") + " #", dur: t.duration }); }
-    else for (let i = 0; i < n; i++) segs.push({ kind: "count", label: n > 1 ? `Round ${i + 1}` : (t.name || "Countdown"), dur: t.duration });
+    const n = t.repeat, rr = t.between.on ? t.between : null;
+    if (n === 0) { loopFrom = segs.length; segs.push({ kind: "count", label: (t.name || "Round") + " #", dur: t.duration }); if (rr) segs.push(...restSegs(rr, "Rest")); }
+    else for (let i = 0; i < n; i++) {
+      segs.push({ kind: "count", label: n > 1 ? `Round ${i + 1}` : (t.name || "Countdown"), dur: t.duration });
+      if (rr && i < n - 1) segs.push(...restSegs(rr, "Rest"));
+    }
   } else {
     if (!t.hasTarget) segs.push({ kind: "up", label: t.name || "Count up", dur: null });
     else {
-      const n = t.repeat;
-      if (n === 0) { loopFrom = segs.length; segs.push({ kind: "up", label: "Round #", dur: t.target }); }
-      else for (let i = 0; i < n; i++) segs.push({ kind: "up", label: n > 1 ? `Round ${i + 1}` : (t.name || "Count up"), dur: t.target });
+      const n = t.repeat, rr = t.between.on ? t.between : null;
+      if (n === 0) { loopFrom = segs.length; segs.push({ kind: "up", label: "Round #", dur: t.target }); if (rr) segs.push(...restSegs(rr, "Rest")); }
+      else for (let i = 0; i < n; i++) {
+        segs.push({ kind: "up", label: n > 1 ? `Round ${i + 1}` : (t.name || "Count up"), dur: t.target });
+        if (rr && i < n - 1) segs.push(...restSegs(rr, "Rest"));
+      }
     }
   }
   return { segs, loopFrom };
 }
 function planTotal(plan) {
-  if (plan.loopFrom != null || plan.segs.some(s => s.dur == null)) return null;
-  return plan.segs.reduce((a, s) => a + s.dur, 0);
+  if (plan.loopFrom != null || plan.segs.some(s => s.dur == null && !s.hold)) return null;
+  return plan.segs.reduce((a, s) => a + (s.dur || 0), 0);
 }
+const fmtTotal = (plan, tot) => fmt(tot) + (plan.segs.some(s => s.hold) ? "+" : "");
 function summary(t) {
   const plan = buildPlan(t), tot = planTotal(plan);
   let d;
@@ -428,12 +445,30 @@ function summary(t) {
     if (t.sets > 1) d += ` · ${t.sets} sets`;
   } else if (t.type === "countdown") d = fmt(t.duration) + (t.repeat === 0 ? " · repeat ∞" : t.repeat > 1 ? ` × ${t.repeat}` : "");
   else d = t.hasTarget ? `to ${fmt(t.target)}` + (t.repeat === 0 ? " · repeat ∞" : t.repeat > 1 ? ` × ${t.repeat}` : "") : "Open-ended";
-  return d + (tot != null && t.type !== "countdown" || (tot != null && t.repeat > 1) ? ` · ${fmt(tot)} total` : "");
+  return d + (tot != null && t.type !== "countdown" || (tot != null && t.repeat > 1) ? ` · ${fmtTotal(plan, tot)} total` : "");
 }
 
 /* =========================================================
    Views
    ========================================================= */
+/* Every screen/sheet above the timer list is a "layer" with its own history entry,
+   so the phone's Back button goes up one level instead of leaving the app.
+   A layer's close function may return false to refuse (e.g. "discard changes?"). */
+const layers = []; let histOK = true;
+function pushLayer(fn) {
+  layers.push(fn);
+  try { history.pushState({ cadence: layers.length }, ""); } catch { histOK = false; }
+}
+function replaceLayer(fn) { if (layers.length) layers[layers.length - 1] = fn; else pushLayer(fn); }
+function back() {
+  if (!layers.length) return;
+  if (histOK) return history.back();
+  const fn = layers.pop(); if (fn() === false) layers.push(fn);
+}
+addEventListener("popstate", () => {
+  const fn = layers.pop(); if (!fn) return;
+  if (fn() === false) { layers.push(fn); try { history.pushState({ cadence: layers.length }, ""); } catch {} }
+});
 function show(id) { document.querySelectorAll(".view").forEach(v => v.classList.toggle("on", v.id === id)); }
 
 function renderList() {
@@ -459,9 +494,10 @@ function confirmSheet(title, msg, ok = "Delete") {
     const sc = $("#confScrim");
     $("#confSheet").innerHTML = `<div class="grab"></div><h3>${esc(title)}</h3><div style="color:var(--muted);padding:0 4px">${esc(msg)}</div>
       <div class="confirm-acts"><button data-c="0">Cancel</button><button class="del" data-c="1">${esc(ok)}</button></div>`;
-    const done = v => { sc.classList.remove("on"); sc.onclick = null; res(v); };
-    sc.onclick = e => { const b = e.target.closest("[data-c]"); if (b) done(b.dataset.c === "1"); else if (e.target === sc) done(false); };
+    let val = false;
+    sc.onclick = e => { const b = e.target.closest("[data-c]"); if (b) { val = b.dataset.c === "1"; back(); } };
     sc.classList.add("on");
+    pushLayer(() => { sc.classList.remove("on"); sc.onclick = null; res(val); });
   });
 }
 function duplicateTimer(t) {
@@ -512,20 +548,32 @@ $("#cards").addEventListener("click", e => {
   const c = e.target.closest(".card");
   if (c) openEdit(timers.find(t => t.id === c.dataset.id));
 });
-$("#fab").onclick = () => $("#addScrim").classList.add("on");
-document.querySelectorAll(".scrim").forEach(s => s.addEventListener("click", e => { if (e.target === s) s.classList.remove("on"); }));
+$("#fab").onclick = () => { $("#addScrim").classList.add("on"); pushLayer(() => $("#addScrim").classList.remove("on")); };
+document.querySelectorAll(".scrim").forEach(s => s.addEventListener("click", e => { if (e.target === s) back(); }));
 document.querySelectorAll("[data-new]").forEach(b => b.onclick = () => {
   $("#addScrim").classList.remove("on");
-  openEdit(newTimer(b.dataset.new), true);
+  openEdit(newTimer(b.dataset.new), true, "replace");
 });
 
 /* ---------------- Editor ---------------- */
-let draft = null, draftIsNew = false;
-function openEdit(t, isNew = false) {
-  draft = structuredClone(t); draftIsNew = isNew;
-  $("#editTitle").textContent = isNew ? "New " + TYPE_META[t.type].tag.toLowerCase() : "Edit timer";
-  renderEdit(); show("edit"); $("#edit .scroll").scrollTop = 0;
+let draft = null, draftIsNew = false, editSnap = "", editForce = false;
+function editBack() {
+  if (!editForce && JSON.stringify(draft) !== editSnap) {
+    setTimeout(() => confirmSheet("Discard changes?", "Your edits to this timer won't be saved.", "Discard")
+      .then(ok => { if (ok) { editForce = true; back(); } }), 0);
+    return false;
+  }
+  editForce = false; show("list");
 }
+function openEdit(t, isNew = false, mode = "push") {
+  draft = structuredClone(t); draftIsNew = isNew; editSnap = JSON.stringify(draft); editForce = false;
+  $("#editTitle").textContent = isNew ? "New " + TYPE_META[t.type].tag.toLowerCase() : "Edit timer";
+  $("#startLbl").textContent = isNew ? "Save & start" : "Run";
+  $("#startHint").textContent = isNew ? "" : "doesn't save changes";
+  renderEdit(); show("edit"); $("#edit .scroll").scrollTop = 0;
+  if (mode === "push") pushLayer(editBack); else if (mode === "replace") replaceLayer(editBack);
+}
+const closeEdit = () => { editForce = true; back(); };
 function getPath(o, p) { return p.split(".").reduce((a, k) => a?.[k], o); }
 function setPath(o, p, v) { const ks = p.split("."), last = ks.pop(); ks.reduce((a, k) => a[k], o)[last] = v; }
 
@@ -556,6 +604,17 @@ const PREP_STEPS = [0, 3, 5, 10, 15, 20, 30, 45, 60, 90, 120];
 const togHTML = (path, on, rerender = true) =>
   `<label class="tog"><input type="checkbox" data-path="${path}" ${rerender ? 'data-rr="1"' : ""} ${on ? "checked" : ""}><span></span></label>`;
 
+function restRows(path, r, title, small, ph) {
+  let h = `<div class="row"><div class="lbl">${title}<small>${small}</small></div>${togHTML(path + ".on", r.on)}</div>`;
+  if (!r.on) return h;
+  h += `<div class="row"><div class="lbl">Ends</div><div class="seg3">
+      <button data-hp="${path}.hold" data-hold="0" class="${r.hold ? "" : "on"}">Timed</button>
+      <button data-hp="${path}.hold" data-hold="1" class="${r.hold ? "on" : ""}">When I tap</button></div></div>
+    <div class="row"><span class="bar" style="width:4px;align-self:stretch;border-radius:2px;background:var(--rest)"></span>
+      <input class="name-in" data-path="${path}.name" placeholder="${ph}" value="${esc(r.name)}" maxlength="30" aria-label="${ph} name">
+      ${r.hold ? `<span style="color:var(--muted);font-size:14px;flex:none">until you tap</span>` : durHTML(path + ".dur", r.dur)}</div>`;
+  return h;
+}
 function renderEdit() {
   const t = draft;
   let h = `<div class="group" style="margin-top:8px"><div class="row">
@@ -572,8 +631,7 @@ function renderEdit() {
     h += `<div class="sec">Intervals</div><div class="group">
       <div class="row"><div class="lbl">Intervals</div>${numHTML("@count", t.work.length, 1, 99)}</div>
       <div class="row"><div class="lbl">Sets<small>Repeat the whole block</small></div>${numHTML("sets", t.sets, 1, 20)}</div>
-      ${t.sets > 1 ? `<div class="row"><div class="lbl">Rest between sets<small>Replaces the last rest of each set</small></div>${togHTML("setRest.on", t.setRest.on)}</div>
-      ${t.setRest.on ? `<div class="row"><input class="name-in" data-path="setRest.name" placeholder="Set rest" value="${esc(t.setRest.name)}" maxlength="30" aria-label="Set rest name">${durHTML("setRest.dur", t.setRest.dur)}</div>` : ""}` : ""}
+      ${t.sets > 1 ? restRows("setRest", t.setRest, "Rest between sets", "Replaces the last rest of each set", "Set rest") : ""}
       <div class="row"><div class="lbl">Rest after last interval</div>${togHTML("restAfterLast", t.restAfterLast)}</div></div>`;
     t.work.forEach((w, i) => {
       const last = i === t.work.length - 1, showRest = !last || t.restAfterLast || t.sets > 1;
@@ -598,12 +656,14 @@ function renderEdit() {
   } else if (t.type === "countdown") {
     h += `<div class="sec">Countdown</div><div class="group">
       <div class="row"><div class="lbl">Duration</div>${durHTML("duration", t.duration)}</div>
-      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99)}</div></div>`;
+      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99)}</div>
+      ${t.repeat !== 1 ? restRows("between", t.between, "Rest between rounds", "A breather before the next round", "Rest") : ""}</div>`;
   } else {
     h += `<div class="sec">Count up</div><div class="group">
       <div class="row"><div class="lbl">Stop at a target</div>${togHTML("hasTarget", t.hasTarget)}</div>
       ${t.hasTarget ? `<div class="row"><div class="lbl">Target</div>${durHTML("target", t.target)}</div>
-      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99)}</div>` : ""}
+      <div class="row"><div class="lbl">Repeat<small>∞ runs until you stop it</small></div>${numHTML("repeat", t.repeat, 0, 99)}</div>
+      ${t.repeat !== 1 ? restRows("between", t.between, "Rest between rounds", "A breather before the next round", "Rest") : ""}` : ""}
     </div>`;
   }
   if (!draftIsNew) h += `<div class="btnrow"><button id="dupTimer">Duplicate</button><button class="del" id="delTimer">Delete</button></div>`;
@@ -611,8 +671,8 @@ function renderEdit() {
   updateTotal();
 }
 function updateTotal() {
-  const tot = planTotal(buildPlan(draft));
-  const el = $("#editTotal"); if (el) el.textContent = tot == null ? "∞" : fmt(tot);
+  const plan = buildPlan(draft), tot = planTotal(plan);
+  const el = $("#editTotal"); if (el) el.textContent = tot == null ? "∞" : fmtTotal(plan, tot);
 }
 function readDur(box) {
   const m = parseInt(box.querySelector(".mm").value, 10) || 0;
@@ -676,6 +736,8 @@ $("#form").addEventListener("click", e => {
     else v = clamp(v + d, min, max);
     setPath(draft, p, v); return renderEdit();
   }
+  const hb = e.target.closest("[data-hold]");
+  if (hb) { setPath(draft, hb.dataset.hp, hb.dataset.hold === "1"); return renderEdit(); }
   const dup = e.target.closest("[data-dup]");
   if (dup) {
     const i = +dup.dataset.dup; if (draft.work.length >= 99) return toast("99 intervals max");
@@ -692,10 +754,10 @@ $("#form").addEventListener("click", e => {
     draft.work.push({ name: "", dur: l.dur, rest: l.rest, restName: "" }); renderEdit();
     $("#edit .scroll").scrollTop = 1e6; return;
   }
-  if (e.target.id === "dupTimer") { if (!commitDraft()) return; return openEdit(duplicateTimer(draft)); }
-  if (e.target.id === "delTimer") { deleteTimer(draft).then(ok => ok && show("list")); }
+  if (e.target.id === "dupTimer") { if (!commitDraft()) return; return openEdit(duplicateTimer(draft), false, "replace"); }
+  if (e.target.id === "delTimer") { deleteTimer(draft).then(ok => ok && closeEdit()); }
 });
-$("#cancelEdit").onclick = () => show("list");
+$("#cancelEdit").onclick = () => back();
 function commitDraft() {
   const plan = buildPlan(draft);
   if (!plan.segs.some(s => s.kind !== "prep" && (s.dur == null || s.dur > 0))) { toast("Give it at least one interval longer than 0:00"); return null; }
@@ -704,8 +766,13 @@ function commitDraft() {
   if (i >= 0) timers[i] = draft; else timers.unshift(draft);
   saveTimers(); renderList(); return draft;
 }
-$("#saveEdit").onclick = () => { if (commitDraft()) show("list"); };
-$("#startEdit").onclick = () => { const t = commitDraft(); if (t) startRun(t); };
+$("#saveEdit").onclick = () => { if (commitDraft()) closeEdit(); };
+$("#startEdit").onclick = () => {
+  if (draftIsNew) { const t = commitDraft(); if (t) startRun(t, "replace"); return; }
+  const plan = buildPlan(draft);   // Run: use what's on screen, save nothing; Back returns here
+  if (!plan.segs.some(s => s.kind !== "prep" && (s.dur == null || s.dur > 0))) return toast("Give it at least one interval longer than 0:00");
+  startRun(structuredClone(draft), "push");
+};
 
 /* ---------------- Settings ---------------- */
 function renderSettings() {
@@ -720,7 +787,7 @@ function renderSettings() {
         <option value="">Automatic</option>${englishVoices().map(v => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? "selected" : ""}>${esc(accentOf(v))} · ${esc(v.name.replace(/^(Google|Microsoft)\s*/, "").replace(/\s*\(.*\)$/, ""))}</option>`).join("")}</select></div>
     <div class="row"><div class="lbl">Pace</div><div class="seg3">${["calm", "normal", "brisk"].map(m => `<button data-pace="${m}" class="${s.pace === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
     <div class="row"><div class="lbl">Tone</div><div class="seg3">${["deep", "natural", "bright"].map(m => `<button data-tone="${m}" class="${s.tone === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
-    <div class="row"><div class="lbl">Playful phrases<small>Mixes up the encouragement</small></div>${togHTML("playful", s.playful, false)}</div>
+    <div class="row"><div class="lbl">Playful phrases<small>Light-hearted rest and finish lines</small></div>${togHTML("playful", s.playful, false)}</div>
     <div class="row"><div class="lbl">Count-in<small>"Rest in 3… 2… 1"</small></div>
       <div class="seg3" id="lead">${[3, 4, 5].map(n => `<button data-lead="${n}" class="${s.voiceLead === n ? "on" : ""}">${n}s</button>`).join("")}</div></div>` : ""}
     <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
@@ -747,7 +814,7 @@ function renderSettings() {
   ${!("vibrate" in navigator) ? `<div class="note">This browser doesn't support vibration (iPhone Safari blocks it).</div>` : ""}
   ${!("wakeLock" in navigator) ? `<div class="note">This browser can't keep the screen on; set Auto-Lock to Never during workouts.</div>` : ""}`;
 }
-$("#openSettings").onclick = () => { renderSettings(); $("#setScrim").classList.add("on"); };
+$("#openSettings").onclick = () => { renderSettings(); $("#setScrim").classList.add("on"); pushLayer(() => $("#setScrim").classList.remove("on")); };
 $("#setSheet").addEventListener("input", e => {
   if (e.target.id === "vol") {
     const v = +e.target.value; settings.volume = v / 100; saveSettings(); applyVolume();
@@ -904,10 +971,13 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
    ========================================================= */
 let R = null, loopId = null;
 const run = $("#run");
-function startRun(t) {
+let runForce = false;
+function startRun(t, mode = "push", from) {
   ensureAudio();
+  from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
-  R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0 };
+  R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from };
+  if (mode === "push") pushLayer(runBack); else if (mode === "replace") replaceLayer(runBack);
   $("#runTitle").textContent = t.name || defaultName(t);
   $("#done").classList.remove("on");
   show("run");
@@ -919,11 +989,16 @@ function startRun(t) {
 }
 const seg = () => R.plan.segs[R.i];
 function segLabel(s, cycle = R.cycle) { return s.label.replace("#", cycle); }
-function nextSeg() {
-  if (R.i + 1 < R.plan.segs.length) return { s: R.plan.segs[R.i + 1], cycle: R.cycle };
-  if (R.plan.loopFrom != null) return { s: R.plan.segs[R.plan.loopFrom], cycle: R.cycle + 1 };
-  return null;
+function segAt(off) {
+  let i = R.i, c = R.cycle;
+  for (let k = 0; k < off; k++) {
+    if (i + 1 < R.plan.segs.length) i++;
+    else if (R.plan.loopFrom != null) { i = R.plan.loopFrom; c++; }
+    else return null;
+  }
+  return { s: R.plan.segs[i], cycle: c };
 }
+const nextSeg = () => segAt(1);
 function workCount() {
   const segs = R.plan.segs, main = segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up");
   if (!main.length) return "";
@@ -934,11 +1009,11 @@ function workCount() {
 
 const pick = a => a[Math.floor(Math.random() * a.length)];
 const PHRASES = {
-  work: ["Begin. {n}", "{n}. Let's go.", "{n}. Make it count.", "{n}. You've got this.", "{n}. Strong and steady.", "{n}. Future you says thanks."],
-  rest: ["Relax for {d}", "Breathe. {d} of rest.", "Shake it out. {d}.", "Recover for {d}. You earned it.", "{d} to rest. Hydrate if you're fancy.", "Rest for {d}. Try not to lie on the floor."],
-  done: ["Workout complete. Nice work.", "That's a wrap. Well done.", "Done. Go admire yourself in a mirror.", "Workout complete. Your couch is proud of you.", "Finished. Legend behaviour."]
+  rest: [ "Breathe. {d} of rest.", "Shake it out. {d}.", "Recover for {d}. You earned it.", "{d} to rest. Hydrate if you're fancy.", "Rest for {d}. Try not to lie on the floor."],
+  done: [ "That's a wrap. Well done.", "Done. Go admire yourself in a mirror.", "Workout complete. Your couch is proud of you.", "Finished. Legend behaviour."]
 };
-const phrase = (kind, n, d) => (settings.playful ? pick(PHRASES[kind]) : PHRASES[kind][0]).replace("{n}", n).replace("{d}", d);
+const restLine = (s, d) => settings.playful ? (s.say !== "Rest" ? s.say + ". " : "") + pick(PHRASES.rest).replace("{d}", d) : `${s.say}, ${d}`;
+const doneLine = () => settings.playful ? pick(PHRASES.done) : "Workout complete.";
 const sayOf = s => s.say || s.label.replace("#", R ? R.cycle : "");
 const NUM = ["zero", "one", "two", "three", "four", "five"];
 
@@ -950,15 +1025,17 @@ function enterSeg(first) {
   $("#runCount").textContent = workCount();
   const d = $("#digits"); d.classList.remove("pulse"); void d.offsetWidth; d.classList.add("pulse");
   const lbl = segLabel(s), durTxt = s.dur ? spokenDur(s.dur) : "";
-  if (s.kind === "prep") { sfx.phase(); speak("Get ready." + (R.plan.segs[1] ? " First up, " + sayOf(R.plan.segs[1]) : ""), 250); buzz(80); }
-  else if (s.kind === "rest") { sfx.restStart(); speak((s.say && s.say !== "Rest" ? s.say + ". " : "") + phrase("rest", "", durTxt), 600); buzz([120, 80, 120]); }
+  if (s.kind === "prep" && s.auto) { sfx.phase(); speak("Get set", 150); buzz(80); }
+  else if (s.kind === "prep") { const n = nextSeg(); sfx.phase(); speak("Get ready." + (n ? " First up: " + sayOf(n.s) : ""), 250); buzz(80); }
+  else if (s.kind === "rest" && s.hold) { sfx.restStart(); speak(s.say + ". Tap when you're ready.", 600); buzz([120, 80, 120]); }
+  else if (s.kind === "rest") { sfx.restStart(); speak(restLine(s, durTxt), 600); buzz([120, 80, 120]); }
   else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz(200); }
-  else { sfx.workStart(); const opener = first || R.plan.segs[R.i - 1]?.kind === "prep" || R.plan.segs[R.i - 1]?.kind === "warm";
-    speak(opener ? "Begin. " + sayOf(s) : phrase("work", sayOf(s)), 450); buzz(300); }
-  updateNext();
+  else { sfx.workStart(); speak(sayOf(s), 450); buzz(300); }
+  updateNext(); renderBottom();
 }
 function updateNext() {
-  const n = nextSeg();
+  let n = segAt(1); if (n && n.s.auto) n = segAt(2);
+  if (seg().hold) { $("#next").innerHTML = `Resting · next <b>${n ? esc(segLabel(n.s, n.cycle)) : "finish"}</b>`; return; }
   $("#next").innerHTML = n ? `Next · <b>${esc(segLabel(n.s, n.cycle))}</b>${n.s.dur ? " " + fmt(n.s.dur) : ""}` : (seg().dur == null ? "Tap to pause" : "Final interval");
 }
 function tick() {
@@ -980,7 +1057,7 @@ function cues(s, rem) {
   for (let k = lead; k >= 1; k--) {
     if (rem <= k && rem > k - 1 && !R.fired.has("c" + k)) {
       R.fired.add("c" + k);
-      if (counting) speak(k === lead ? (n ? `${n.s.say || segLabel(n.s, n.cycle)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`) : NUM[k]);
+      if (counting) speak(k === lead ? (n ? `${n.s.cue || segLabel(n.s, n.cycle)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`) : NUM[k]);
       if (k <= 3) { if (!counting && s.dur > k + 0.5) sfx.pip(); buzz(40); }
     }
   }
@@ -994,7 +1071,7 @@ function advance(carry = 0) {
 }
 function finish() {
   R.done = true; R.running = false;
-  sfx.finish(); speak(phrase("done"), 900); buzz([300, 120, 300, 120, 600]);
+  sfx.finish(); speak(doneLine(), 900); buzz([300, 120, 300, 120, 600]);
   dropWake(); musicPause(); unduck();
   $("#digits").textContent = "0"; $("#digits").className = "short"; $("#bar").style.width = "100%"; $("#fill").style.height = "100%";
   $("#doneStat").textContent = `${fmt(R.active)} · ${R.plan.segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up").length} intervals`;
@@ -1033,6 +1110,11 @@ function renderBottom() {
   const b = $("#runBottom");
   if (!R || R.done) { b.innerHTML = ""; return; }
   const paused = !R.running;
+  if (seg().hold && !paused) {
+    b.innerHTML = `<div class="ctrls"><button class="main" data-act="next" aria-label="I'm ready">${ICON.play}</button></div>
+      <div class="hint">${settings.tapAnywhere ? "Tap anywhere when you're ready" : "Tap ▶ when you're ready"}</div>`;
+    return;
+  }
   if (settings.tapAnywhere && !paused) { b.innerHTML = `<div class="hint">Tap anywhere to pause</div>`; return; }
   b.innerHTML = `<div class="ctrls">
     <button data-act="prev" aria-label="Previous">${ICON.prev}</button>
@@ -1044,7 +1126,9 @@ run.addEventListener("pointerdown", e => {
   if (!R || R.done) return;
   const btn = e.target.closest("button");
   if (btn) return;
-  if (settings.tapAnywhere) { e.preventDefault(); togglePause(); }
+  if (!settings.tapAnywhere) return;
+  e.preventDefault();
+  if (seg().hold && R.running) advance(0); else togglePause();
 });
 $("#runBottom").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
@@ -1060,16 +1144,22 @@ ex.addEventListener("pointerdown", e => {
   exT = setTimeout(endRun, 700);
 });
 ["pointerup", "pointerleave", "pointercancel"].forEach(ev => ex.addEventListener(ev, () => { clearTimeout(exT); ex.classList.remove("charging"); }));
-function endRun() {
+function teardownRun() {
   clearTimeout(exT); ex.classList.remove("charging");
   clearInterval(loopId);
   if ("speechSynthesis" in window) speechSynthesis.cancel();
   dropWake(); musicPause(); unduck();
   run.classList.remove("paused");
-  R = null; show("list");
+  const from = R?.from || "list"; R = null; return from;
 }
+/* Back during a workout: first press pauses, second press leaves */
+function runBack() {
+  if (!runForce && R && !R.done && R.running) { togglePause(); toast("Paused · press Back again to exit"); return false; }
+  runForce = false; show(teardownRun());
+}
+function endRun() { runForce = true; back(); }
 $("#doneClose").onclick = endRun;
-$("#doneAgain").onclick = () => { const t = R.t; endRun(); startRun(t); };
+$("#doneAgain").onclick = () => { const t = R.t, f = R.from; teardownRun(); startRun(t, "none", f); };
 
 /* keyboard: space = pause, arrows = skip, esc = exit */
 document.addEventListener("keydown", e => {
