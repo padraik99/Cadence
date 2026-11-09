@@ -22,4 +22,16 @@ A clean, offline workout timer that runs in the browser and installs to your pho
 1. Turn on GitHub Pages for this repo (Settings → Pages → deploy from `main`, root folder).
 2. Open the Pages URL in Chrome, then choose **⋮ → Add to Home screen**.
 
-Everything lives in `index.html`; there's no build step and no dependencies. Timers are saved on the device.
+The app lives in `index.html`; there's no build step. Timers are saved on the device. `sw.js` keeps a copy of the app so it opens with no signal.
+
+## Natural voice
+Settings → Voice quality → **Natural** swaps the phone's built-in voice for a neural one that runs on the device ([Piper](https://github.com/rhasspy/piper), via WebAssembly in `piper-worker.js`).
+
+- Voices: American (female, male), British (female, male), Northern English (male), Scottish (female). That is what Piper offers for English accents; it has no Irish, Welsh or Australian voice.
+- A voice is downloaded once (about 90 MB for the first, 63 MB for each extra one), stored on the device, and then works offline.
+- Every line a timer will say is synthesized ahead of time and saved, so cues land on the beat. Saved timers are prepared in the background; a timer that isn't ready yet shows "Preparing voice" for a few seconds before it starts.
+- If a line isn't ready in time, or the voice can't run on the device, the phone's voice says it instead.
+
+Downloaded on demand, not included in this repo:
+- Voice models from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices). Each has its own licence (see its `MODEL_CARD`); the two American voices are CC BY-NC-SA, so non-commercial use only.
+- [onnxruntime-web](https://www.npmjs.com/package/onnxruntime-web) (MIT) and [piper-wasm](https://www.npmjs.com/package/@diffusionstudio/piper-wasm), which contains espeak-ng (GPL-3.0), from jsDelivr.

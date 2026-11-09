@@ -162,6 +162,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .confirm-acts button{flex:1;padding:16px;border-radius:16px;font-weight:700;background:var(--panel2);border:1px solid var(--line)}
 .confirm-acts .del{background:#e5484d;color:#fff;border-color:#e5484d}
 .note{color:var(--faint);font-size:13px;line-height:1.5;padding:10px 4px 0}
+.nvrow{cursor:pointer}
+.nvrow .radio{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center}
+.nvrow.picked .radio{border-color:var(--rest)}
+.nvrow.picked .radio::after{content:"";width:10px;height:10px;border-radius:50%;background:var(--rest)}
+.nvrow.off .radio{opacity:.35}
+.pill{height:36px;padding:0 13px;border-radius:18px;font-weight:600;font-size:14px;background:var(--panel2);border:1px solid var(--line);flex:none}
+.pill.quiet{color:var(--muted);border-color:transparent;background:none;padding:0 6px}
+.nvpct{color:var(--muted);font-variant-numeric:tabular-nums;font-size:14px;flex:none}
 
 /* ---------- run ---------- */
 #run{background:#000;color:#fff;user-select:none;-webkit-user-select:none;touch-action:manipulation;--c:var(--work)}
@@ -195,7 +203,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .ctrls button svg{width:26px;height:26px}
 .ctrls .main{width:88px;height:88px;background:#fff;color:#000}
 .ctrls .main svg{width:34px;height:34px}
-#run.paused #digits{opacity:.6}
+#run.paused #digits,#run.prepping #digits{opacity:.6}
 #run.paused #phase::after{content:" · paused";color:rgba(255,255,255,.55)}
 .done{position:absolute;inset:0;z-index:5;display:none;flex-direction:column;align-items:center;justify-content:center;gap:10px;background:rgba(0,0,0,.72);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);text-align:center;padding:24px}
 .done.on{display:flex;animation:fade .4s}
@@ -352,7 +360,8 @@ const TYPE_META = {
    ========================================================= */
 const DEFAULT_SETTINGS = {
   volume: 0.8, voice: true, voiceLead: 3, beeps: true, haptics: true,
-  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: false, theme: "system", voiceURI: "", pace: "normal", tone: "natural"
+  tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: false, theme: "system", voiceURI: "", pace: "normal", tone: "natural",
+  voiceMode: "phone", nvVoice: ""   // voiceMode "natural" = on-device neural voice (Piper), nvVoice = which one
 };
 let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
 const saveSettings = () => store.set("cadence.settings", settings);
@@ -764,7 +773,7 @@ function commitDraft() {
   draft.name = draft.name.trim();
   const i = timers.findIndex(t => t.id === draft.id);
   if (i >= 0) timers[i] = draft; else timers.unshift(draft);
-  saveTimers(); renderList(); return draft;
+  saveTimers(); renderList(); nvWarm(); return draft;
 }
 $("#saveEdit").onclick = () => { if (commitDraft()) closeEdit(); };
 $("#startEdit").onclick = () => {
@@ -776,24 +785,27 @@ $("#startEdit").onclick = () => {
 
 /* ---------------- Settings ---------------- */
 function renderSettings() {
-  const s = settings, p = Math.round(s.volume * 100);
+  const s = settings, p = Math.round(s.volume * 100), natural = nv.ok && s.voiceMode === "natural";
   $("#setSheet").innerHTML = `<div class="grab"></div><h3>Settings</h3>
   <div class="sec" style="margin-top:6px">Sound</div><div class="group">
     <div class="row"><div class="lbl" style="flex:none;width:64px">Volume</div>
       <input type="range" id="vol" min="0" max="100" value="${p}" style="--p:${p}%" aria-label="Volume"><span id="volv" style="width:4ch;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums">${p}%</span></div>
     <div class="row"><div class="lbl">Interval sounds<small>Chimes, countdown pips</small></div>${togHTML("beeps", s.beeps, false)}</div>
     <div class="row"><div class="lbl">Voice guidance<small>Announces each interval and what's next</small></div>${togHTML("voice", s.voice)}</div>
-    ${s.voice ? `<div class="row"><div class="lbl">Voice</div><select class="sel" id="voiceSel" aria-label="Voice">
-        <option value="">Automatic</option>${englishVoices().map(v => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? "selected" : ""}>${esc(accentOf(v))} · ${esc(v.name.replace(/^(Google|Microsoft)\s*/, "").replace(/\s*\(.*\)$/, ""))}</option>`).join("")}</select></div>
+    ${s.voice ? `${nv.ok ? `<div class="row"><div class="lbl">Voice quality<small>${natural ? "Natural runs on this phone, no signal needed" : "Phone uses the built-in voice"}</small></div>
+      <div class="seg3"><button data-vm="phone" class="${natural ? "" : "on"}">Phone</button><button data-vm="natural" class="${natural ? "on" : ""}">Natural</button></div></div>` : ""}
+    ${natural ? NV_VOICES.map(nvRowHTML).join("") : `<div class="row"><div class="lbl">Voice</div><select class="sel" id="voiceSel" aria-label="Voice">
+        <option value="">Automatic</option>${englishVoices().map(v => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? "selected" : ""}>${esc(accentOf(v))} · ${esc(v.name.replace(/^(Google|Microsoft)\s*/, "").replace(/\s*\(.*\)$/, ""))}</option>`).join("")}</select></div>`}
     <div class="row"><div class="lbl">Pace</div><div class="seg3">${["calm", "normal", "brisk"].map(m => `<button data-pace="${m}" class="${s.pace === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
-    <div class="row"><div class="lbl">Tone</div><div class="seg3">${["deep", "natural", "bright"].map(m => `<button data-tone="${m}" class="${s.tone === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
+    ${natural ? "" : `<div class="row"><div class="lbl">Tone</div><div class="seg3">${["deep", "natural", "bright"].map(m => `<button data-tone="${m}" class="${s.tone === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>`}
     <div class="row"><div class="lbl">Playful phrases<small>Light-hearted rest and finish lines</small></div>${togHTML("playful", s.playful, false)}</div>
     <div class="row"><div class="lbl">Count-in<small>"Rest in 3… 2… 1"</small></div>
       <div class="seg3" id="lead">${[3, 4, 5].map(n => `<button data-lead="${n}" class="${s.voiceLead === n ? "on" : ""}">${n}s</button>`).join("")}</div></div>` : ""}
     <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
     <div class="row"><div class="lbl">Test</div><button class="txt-btn" id="testSound" style="color:var(--text);background:var(--panel2)">Play sample</button></div>
   </div>
-  ${s.voice ? `<div class="note">Voices come from your phone. For more accents and smoother voices on Android: Settings → Text-to-speech → Google → Install voice data.</div>` : ""}
+  ${!s.voice ? "" : natural ? `<div class="note">Natural voices are downloaded once (about 90 MB for the first, 63 MB for each extra one — Wi-Fi recommended) and then work with no signal. ${nvActive() ? "Starting a workout takes a few seconds the first time while its lines are prepared; if a line isn't ready in time, the phone voice says it." : nv.failed ? "The natural voice couldn't start on this device, so the phone voice is being used." : "Until one is downloaded, the phone voice is used."}</div>`
+    : `<div class="note">Voices come from your phone. For more accents and smoother voices on Android: Settings → Text-to-speech → Google → Install voice data.</div>`}
   <div class="sec">Music</div><div class="group">
     <div class="row"><div class="lbl">Play my own tracks<small id="musicInfo">${playlist.length ? playlist.length + " track" + (playlist.length > 1 ? "s" : "") + " loaded" : "Ducks under timer cues"}</small></div>
       <button class="txt-btn" id="pickMusic" style="color:var(--text);background:var(--panel2)">${playlist.length ? "Change" : "Choose"}</button></div>
@@ -828,10 +840,18 @@ $("#setSheet").addEventListener("change", e => {
 });
 $("#setSheet").addEventListener("click", e => {
   const l = e.target.closest("[data-lead]");
-  if (l) { settings.voiceLead = +l.dataset.lead; saveSettings(); renderSettings(); }
+  if (l) { settings.voiceLead = +l.dataset.lead; saveSettings(); renderSettings(); nvWarm(); }
+  const vm = e.target.closest("[data-vm]");
+  if (vm) { settings.voiceMode = vm.dataset.vm; saveSettings(); renderSettings(); nvWarm(); }
+  const nb = e.target.closest("[data-nvact]"), nr = e.target.closest("[data-nv]");
+  if (nb) nvAction(nb.dataset.nvact, nr.dataset.nv);
+  else if (nr) nvAction(nv.stored.has(nr.dataset.nv) ? "use" : "get", nr.dataset.nv);
   const pc = e.target.closest("[data-pace]"), tn = e.target.closest("[data-tone]");
-  if (pc || tn) { if (pc) settings.pace = pc.dataset.pace; else settings.tone = tn.dataset.tone; saveSettings(); renderSettings(); speak("Relax for twenty seconds."); }
-  if (e.target.id === "testSound") { ensureAudio(); sfx.workStart(); setTimeout(() => speak("Rest in " + settings.voiceLead), 700); setTimeout(() => { sfx.pip(); }, 2400); setTimeout(() => sfx.restStart(), 3400); }
+  if (pc || tn) { if (pc) settings.pace = pc.dataset.pace; else settings.tone = tn.dataset.tone; saveSettings(); renderSettings(); ensureAudio(); sayWhenReady("Relax for twenty seconds."); nvWarm(6000); }
+  if (e.target.id === "testSound") {
+    ensureAudio(); const line = "Rest in " + NUM[settings.voiceLead];
+    voiceReady([line]).then(() => { sfx.workStart(); speak(line, 700); setTimeout(() => { sfx.pip(); }, 2400); setTimeout(() => sfx.restStart(), 3400); });
+  }
   if (e.target.id === "pickMusic") $("#musicPick").click();
   const th = e.target.closest("[data-th]");
   if (th) { settings.theme = th.dataset.th; saveSettings(); applyTheme(); renderSettings(); }
@@ -900,18 +920,233 @@ function pickVoice() {
   return en.find(v => v.localService) || en[0] || null;
 }
 if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voices = speechSynthesis.getVoices(); if ($("#setScrim").classList.contains("on")) renderSettings(); };
+const hasTTS = "speechSynthesis" in window;
+let speakT = null;
+/* Every spoken line comes through here. Natural voice if that line is already synthesized, otherwise the phone's voice. */
 function speak(text, delay = 0) {
-  if (!settings.voice || !("speechSynthesis" in window) || settings.volume === 0) return;
+  if (!settings.voice || settings.volume === 0) return;
+  clearTimeout(speakT);
+  if (nvActive() && ac && ac.state === "running") {
+    const clip = nv.mem.get(nvKey(text));
+    if (clip) return nvPlay(clip, delay);
+    nvEnsure(text);   // not ready in time: the phone says it now, and it's ready for next time
+  }
+  if (!hasTTS) return;
+  delay += leadIn();
   const go = () => {
-    speechSynthesis.cancel();
+    stopSpeech();
     const u = new SpeechSynthesisUtterance(text);
     const v = pickVoice(); if (v) { u.voice = v; u.lang = v.lang; }
     u.rate = PACE[settings.pace] || 1.02; u.pitch = TONE[settings.tone] || 1; u.volume = settings.volume;
     u.onstart = () => duck(0, true); u.onend = u.onerror = () => unduck();
     speechSynthesis.speak(u);
   };
-  delay ? setTimeout(go, delay) : go();
+  delay ? speakT = setTimeout(go, delay) : go();
 }
+function stopSpeech() {
+  clearTimeout(speakT);
+  if (hasTTS) speechSynthesis.cancel();
+  if (nv.src) { try { nv.src.onended = null; nv.src.stop(); } catch {} nv.src = null; clearTimeout(nv.duckT); unduck(); }
+}
+
+/* Bluetooth earbuds go to sleep between sounds and clip the start of the next one. A steady tone far too low and quiet
+   to hear keeps the link awake for the whole workout; outside a workout it starts just before speech as a lead-in. */
+let ka = null, kaT = null;
+function keepAlive(on) {
+  clearTimeout(kaT);
+  if (!ac) return;
+  if (on && !ka) {
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.frequency.value = 30; g.gain.value = 0.004; o.connect(g); g.connect(ac.destination); o.start(); ka = o;
+  } else if (!on && ka) { try { ka.stop(); } catch {} ka = null; }
+}
+/* returns how many ms speech should wait so the lead-in has woken the earbuds */
+function leadIn() {
+  if (!ac || ka) return 0;
+  keepAlive(true); kaT = setTimeout(() => { if (!R) keepAlive(false); }, 8000);
+  return 250;
+}
+
+/* ---- Natural voice: Piper neural TTS, run on the device by piper-worker.js ---- */
+const NV_VOICES = [   // all from huggingface.co/rhasspy/piper-voices; Piper has no Irish, Welsh or Australian English voice
+  { id: "en_US-hfc_female-medium", accent: "American", who: "female" },
+  { id: "en_US-ryan-medium", accent: "American", who: "Ryan · male" },
+  { id: "en_GB-cori-medium", accent: "British", who: "Cori · female" },
+  { id: "en_GB-alan-medium", accent: "British", who: "Alan · male" },
+  { id: "en_GB-northern_english_male-medium", accent: "Northern English", who: "male" },
+  { id: "en_GB-alba-medium", accent: "Scottish", who: "Alba · female" }
+];
+const NV_CACHE = "cadence-voice-v1", NV_PACE = { calm: 1.12, normal: 1, brisk: 0.9 };
+const NV_SAMPLE = "Work one: squats. Rest in three.";
+const nvUrl = id => { const [loc, name, q] = id.split("-"); return `https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/${loc}/${name}/${q}/${id}.onnx`; };
+const nv = {
+  ok: "caches" in window && "Worker" in window && "indexedDB" in window && typeof WebAssembly === "object",
+  w: null, rid: 0, calls: new Map(),     // worker + pending requests
+  stored: new Set(), loaded: "", dl: null, busy: "", failed: false,
+  mem: new Map(), pend: new Map(), src: null, duckT: null, errs: 0
+};
+const nvActive = () => settings.voice && settings.voiceMode === "natural" && nv.ok && !nv.failed && nv.stored.has(settings.nvVoice);
+const nvKey = (text, vid = settings.nvVoice) => `${vid}|${settings.pace}|${text}`;
+const setOpen = () => $("#setScrim").classList.contains("on");
+
+function nvStop() {
+  try { nv.w?.terminate(); } catch {} nv.w = null; nv.loaded = "";
+  nv.calls.forEach(c => c.no(new Error("voice worker stopped"))); nv.calls.clear();
+}
+function nvFail(why) {
+  if (nv.failed) return;
+  nv.failed = true; console.warn("Natural voice off:", why);
+  nvStop();
+  toast("Natural voice unavailable — using the phone voice");
+  if (setOpen()) renderSettings();
+}
+function nvCall(msg, onProgress) {
+  if (!nv.w) {
+    nv.w = new Worker("piper-worker.js");
+    nv.w.onmessage = e => {
+      const m = e.data, c = nv.calls.get(m.rid); if (!c) return;
+      if (m.t === "progress") return c.onProgress?.(m.pct);
+      nv.calls.delete(m.rid);
+      m.t === "ok" ? c.ok(m) : c.no(new Error(m.msg));
+    };
+    nv.w.onerror = e => nvFail(e.message || "worker error");
+  }
+  const rid = ++nv.rid, p = new Promise((ok, no) => { nv.calls.set(rid, { ok, no, onProgress }); nv.w.postMessage({ ...msg, rid }); });
+  p.rid = rid; return p;
+}
+/* get a voice into memory (downloading it first if needed) */
+function nvLoad(id, onProgress) {
+  if (nv.loaded === id) return Promise.resolve();
+  if (nv.loadP?.id === id) return nv.loadP;
+  const p = nv.loadP = nvCall({ t: "load", id, url: nvUrl(id), pri: true }, onProgress)
+    .then(() => { nv.loaded = id; nv.stored.add(id); }).finally(() => { if (nv.loadP === p) nv.loadP = null; });
+  p.id = id; return p;
+}
+/* synthesized lines are kept on the device, so a workout you've run before starts instantly */
+let nvDbP = null;
+const nvDb = () => nvDbP ||= new Promise((ok, no) => {
+  const q = indexedDB.open("cadence-voice", 1);
+  q.onupgradeneeded = () => q.result.createObjectStore("clips");
+  q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error);
+});
+const nvStore = (mode, fn) => nvDb().then(db => new Promise((ok, no) => {
+  const q = fn(db.transaction("clips", mode).objectStore("clips")); q.onsuccess = () => ok(q.result); q.onerror = () => no(q.error);
+}));
+function nvSave(key, clip) {
+  const i16 = new Int16Array(clip.pcm.length);
+  for (let i = 0; i < i16.length; i++) i16[i] = Math.max(-1, Math.min(1, clip.pcm[i])) * 32767;
+  nvStore("readwrite", s => s.put({ b: i16.buffer, sr: clip.sr }, key)).catch(() => {});
+}
+async function nvRecall(key) {
+  try {
+    const v = await nvStore("readonly", s => s.get(key)); if (!v) return null;
+    const i16 = new Int16Array(v.b), pcm = new Float32Array(i16.length);
+    for (let i = 0; i < pcm.length; i++) pcm[i] = i16[i] / 32767;
+    return { pcm, sr: v.sr };
+  } catch { return null; }
+}
+/* make sure one line is ready to play; resolves true when it is, false if it can't be made.
+   pri = needed now (a workout is starting); otherwise it's made in the background behind anything urgent */
+function nvEnsure(text, pri = true, vid = settings.nvVoice) {
+  const key = nvKey(text, vid);
+  if (nv.mem.has(key)) return Promise.resolve(true);
+  let j = nv.pend.get(key);
+  if (j) { if (pri && !j.pri) { j.pri = true; if (j.rid) nv.w?.postMessage({ t: "bump", rid: j.rid }); } return j.p; }
+  const ls = NV_PACE[settings.pace] || 1;
+  j = { pri, rid: 0 };
+  j.p = nvRecall(key).then(hit => {
+    if (hit) { nv.mem.set(key, hit); return true; }
+    return nvLoad(vid).then(() => { const c = nvCall({ t: "synth", text, vid, ls, pri: j.pri }); j.rid = c.rid; return c; })
+      .then(m => { const clip = { pcm: m.pcm, sr: m.sr }; nv.mem.set(key, clip); nvSave(key, clip); return true; });
+  }).then(ok => { nv.errs = 0; return ok; }, err => {
+    if (err.message === "stale") return false;
+    console.warn("Natural voice line failed:", err.message);
+    if (++nv.errs >= 4) nvFail("repeated errors");   // e.g. the phone ran out of memory: stop trying, use the phone voice
+    return false;
+  }).finally(() => nv.pend.delete(key));
+  nv.pend.set(key, j);
+  return j.p;
+}
+/* in the background, get the lines of every saved timer ready, so pressing play doesn't have to wait */
+let warmT = null;
+function nvWarm(delay = 2500) {
+  clearTimeout(warmT);
+  warmT = setTimeout(() => {
+    if (!nvActive() || R) return;
+    const lead = NUM[settings.voiceLead], lines = ["two", "one", "three", "four", `Rest in ${lead}`, `Work in ${lead}`, `Finishing in ${lead}`, "Get set", "Workout complete.", "Rest. Tap when you're ready."];
+    if (!settings.playful) for (const t of timers) { const plan = buildPlan(t); lines.push(...planLines(plan, 1, plan.loopFrom != null ? 3 : 1, "Workout complete.")); }
+    [...new Set(lines)].slice(0, 160).forEach(l => nvEnsure(l, false));
+  }, delay);
+}
+/* prepare a set of lines, giving up waiting after `budget` ms (they keep being made in the background) */
+function nvPrepare(texts, budget, onProgress) {
+  texts = [...new Set(texts)]; let n = 0;
+  const all = Promise.all(texts.map(t => nvEnsure(t).then(() => onProgress?.(++n, texts.length))));
+  return Promise.race([all, new Promise(r => setTimeout(r, budget))]);
+}
+const voiceReady = texts => nvActive() ? nvPrepare(texts, 8000) : Promise.resolve();
+const sayWhenReady = text => voiceReady([text]).then(() => speak(text));
+function nvPlay(clip, delay) {
+  const buf = ac.createBuffer(1, clip.pcm.length, clip.sr); buf.getChannelData(0).set(clip.pcm);
+  const src = ac.createBufferSource(); src.buffer = buf; src.connect(master);
+  delay += leadIn();
+  const t0 = ac.currentTime + delay / 1000, old = nv.src;
+  if (hasTTS) speechSynthesis.cancel();
+  if (old) { old.onended = null; try { old.stop(t0); } catch {} }
+  clearTimeout(nv.duckT); nv.duckT = setTimeout(() => { if (nv.src === src) duck(0, true); }, delay);
+  src.onended = () => { if (nv.src === src) { nv.src = null; unduck(); } };
+  src.start(t0); nv.src = src;
+}
+async function nvScan() {
+  if (!nv.ok) return;
+  try {
+    const c = await caches.open(NV_CACHE);
+    for (const v of NV_VOICES) if (await c.match(nvUrl(v.id))) nv.stored.add(v.id);
+    nvStore("readonly", s => s.count()).then(n => { if (n > 600) nvStore("readwrite", s => s.clear()); }).catch(() => {});
+  } catch { nv.ok = false; }
+  if (setOpen()) renderSettings();
+  nvWarm();
+}
+function nvRowHTML(v) {
+  const have = nv.stored.has(v.id), sel = have && settings.nvVoice === v.id, dl = nv.dl?.id === v.id;
+  return `<div class="row nvrow ${sel ? "picked" : ""} ${have ? "" : "off"}" data-nv="${v.id}"><span class="radio"></span>
+    <div class="lbl">${v.accent}<small>${v.who}${have ? "" : " · 63 MB"}</small></div>
+    ${dl ? `<span class="nvpct" id="nvPct">${nv.dl.pct < 100 ? nv.dl.pct + "%" : "Starting…"}</span>`
+      : have ? `${sel ? "" : `<button class="pill quiet" data-nvact="rm">Remove</button>`}<button class="pill" data-nvact="play">${nv.busy === v.id ? "…" : "Preview"}</button>`
+      : `<button class="pill" data-nvact="get">Download</button>`}</div>`;
+}
+async function nvAction(act, id) {
+  ensureAudio();
+  if (act === "get") {
+    if (nv.dl) return toast("One download at a time");
+    if (nv.failed) return toast("Natural voice couldn't start on this device");
+    nv.dl = { id, pct: 0 }; renderSettings();
+    try { navigator.storage?.persist?.().catch(() => {}); } catch {}
+    try {
+      await nvLoad(id, pct => { nv.dl.pct = pct; const el = $("#nvPct"); if (el) el.textContent = pct < 100 ? pct + "%" : "Starting…"; });
+      settings.nvVoice = id; saveSettings(); nv.dl = null; if (setOpen()) renderSettings();
+      toast("Voice downloaded"); nvAction("play", id); nvWarm();
+    } catch (err) {
+      console.warn("Voice download failed:", err.message); nv.dl = null; if (setOpen()) renderSettings();
+      if (!nv.failed) toast(navigator.onLine === false ? "You're offline — connect to download a voice" : "Download didn't finish — try again");
+    }
+  } else if (act === "use") {
+    if (settings.nvVoice !== id) { settings.nvVoice = id; saveSettings(); renderSettings(); nvWarm(6000); }
+    nvAction("play", id);
+  } else if (act === "play") {
+    if (nv.busy) return;
+    nv.busy = id; if (setOpen()) renderSettings();
+    const ok = await Promise.race([nvEnsure(NV_SAMPLE, true, id), new Promise(r => setTimeout(() => r(false), 30000))]);
+    nv.busy = ""; if (setOpen()) renderSettings();
+    const clip = nv.mem.get(nvKey(NV_SAMPLE, id));
+    if (ok && clip && ac) nvPlay(clip, 0); else if (!nv.failed) toast("Couldn't play that voice");
+  } else if (act === "rm") {
+    const c = await caches.open(NV_CACHE); await c.delete(nvUrl(id)); await c.delete(nvUrl(id) + ".json");
+    nv.stored.delete(id); if (nv.loaded === id && !nv.dl) nvStop();
+    renderSettings(); toast("Voice removed");
+  }
+}
+nvScan();
 
 /* ---- own-music playback with ducking ---- */
 const musicEl = $("#music");
@@ -976,16 +1211,68 @@ function startRun(t, mode = "push", from) {
   ensureAudio();
   from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
-  R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from };
+  const me = R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from,
+    started: false, doneLine: doneLine() };
   if (mode === "push") pushLayer(runBack); else if (mode === "replace") replaceLayer(runBack);
   $("#runTitle").textContent = t.name || defaultName(t);
   $("#done").classList.remove("on");
   show("run");
-  holdWake(); musicPlay();
-  enterSeg(true);
+  holdWake(); clearInterval(loopId);
+  if (settings.voice && settings.volume > 0) keepAlive(true);
+  const go = me.go = () => {
+    if (R !== me || me.started) return;
+    me.started = true; me.last = performance.now(); me.startedAt = Date.now();
+    run.classList.remove("prepping");
+    musicPlay(); enterSeg(true); renderBottom();
+    loopId = setInterval(tick, 100);
+    requestAnimationFrame(frame);
+  };
+  /* Natural voice: synthesize every line this workout will say before the clock starts, so each one lands on its beat */
+  const lines = nvActive() && settings.volume > 0 ? planLines(plan, 1, plan.loopFrom != null ? 3 : 1) : [];
+  if (lines.every(l => nv.mem.has(nvKey(l)))) return go();
+  const s0 = plan.segs[0], total = new Set(lines).size;
+  run.classList.add("prepping"); run.style.setProperty("--c", KIND_COLOR[s0.kind]);
+  $("#phase").textContent = "Preparing voice"; $("#runCount").textContent = "";
+  $("#digits").textContent = s0.dur == null ? "0:00" : s0.dur < 60 ? String(s0.dur) : fmt(s0.dur);
+  $("#digits").className = $("#digits").textContent.includes(":") ? "" : "short";
+  $("#bar").style.width = "0"; $("#fill").style.height = "0"; $("#next").textContent = `0 of ${total} lines ready`;
   renderBottom();
-  clearInterval(loopId); loopId = setInterval(tick, 100);
-  requestAnimationFrame(frame);
+  nvPrepare(lines, 20000, (n, tot) => {
+    if (R !== me || me.started) return;
+    $("#next").textContent = `${n} of ${tot} lines ready`; $("#bar").style.width = (n / tot * 100).toFixed(1) + "%";
+  }).then(go);
+}
+/* pure helpers: what gets said for segment i (on loop number c), shared by the runner and the voice preparation */
+function stepFrom(plan, i, c) {
+  if (i + 1 < plan.segs.length) return { i: i + 1, c };
+  return plan.loopFrom != null ? { i: plan.loopFrom, c: c + 1 } : null;
+}
+const sayAt = (s, c) => s.say || s.label.replace("#", c);
+function entryLine(plan, i, c) {
+  const s = plan.segs[i], d = s.dur ? spokenDur(s.dur) : "";
+  if (s.kind === "prep") {
+    if (s.auto) return "Get set";
+    const n = stepFrom(plan, i, c); return "Get ready." + (n ? " First up: " + sayAt(plan.segs[n.i], n.c) : "");
+  }
+  if (s.kind === "rest") return s.hold ? s.say + ". Tap when you're ready." : (s.line ||= restLine(s, d));
+  if (s.kind === "warm" || s.kind === "cool") return s.label.replace("#", c) + (d ? ", " + d : "");
+  return sayAt(s, c);
+}
+function leadLine(plan, i, c, k) {
+  if (k !== settings.voiceLead) return NUM[k];
+  const n = stepFrom(plan, i, c), ns = n && plan.segs[n.i];
+  return ns ? `${ns.cue || ns.label.replace("#", n.c)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`;
+}
+/* every line the plan can say during loops c0..c1, in the order they'll be needed */
+function planLines(plan, c0, c1, done = R?.doneLine) {
+  const out = [], lead = settings.voiceLead;
+  for (let c = c0; c <= c1; c++) plan.segs.forEach((s, i) => {
+    if (c > 1 && (plan.loopFrom == null || i < plan.loopFrom)) return;
+    out.push(entryLine(plan, i, c));
+    if (s.dur != null && s.dur >= lead + 2) for (let k = lead; k >= 1; k--) out.push(leadLine(plan, i, c, k));
+  });
+  if (plan.loopFrom == null && done) out.push(done);
+  return out;
 }
 const seg = () => R.plan.segs[R.i];
 function segLabel(s, cycle = R.cycle) { return s.label.replace("#", cycle); }
@@ -1014,7 +1301,6 @@ const PHRASES = {
 };
 const restLine = (s, d) => settings.playful ? (s.say !== "Rest" ? s.say + ". " : "") + pick(PHRASES.rest).replace("{d}", d) : `${s.say}, ${d}`;
 const doneLine = () => settings.playful ? pick(PHRASES.done) : "Workout complete.";
-const sayOf = s => s.say || s.label.replace("#", R ? R.cycle : "");
 const NUM = ["zero", "one", "two", "three", "four", "five"];
 
 function enterSeg(first) {
@@ -1024,13 +1310,12 @@ function enterSeg(first) {
   $("#phase").textContent = segLabel(s);
   $("#runCount").textContent = workCount();
   const d = $("#digits"); d.classList.remove("pulse"); void d.offsetWidth; d.classList.add("pulse");
-  const lbl = segLabel(s), durTxt = s.dur ? spokenDur(s.dur) : "";
-  if (s.kind === "prep" && s.auto) { sfx.phase(); speak("Get set", 150); buzz(80); }
-  else if (s.kind === "prep") { const n = nextSeg(); sfx.phase(); speak("Get ready." + (n ? " First up: " + sayOf(n.s) : ""), 250); buzz(80); }
-  else if (s.kind === "rest" && s.hold) { sfx.restStart(); speak(s.say + ". Tap when you're ready.", 600); buzz([120, 80, 120]); }
-  else if (s.kind === "rest") { sfx.restStart(); speak(restLine(s, durTxt), 600); buzz([120, 80, 120]); }
-  else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(lbl + (durTxt ? ", " + durTxt : ""), 600); buzz(200); }
-  else { sfx.workStart(); speak(sayOf(s), 450); buzz(300); }
+  const line = entryLine(R.plan, R.i, R.cycle);
+  if (s.kind === "prep" && s.auto) { sfx.phase(); speak(line, 150); buzz(80); }
+  else if (s.kind === "prep") { sfx.phase(); speak(line, 250); buzz(80); }
+  else if (s.kind === "rest") { sfx.restStart(); speak(line, 600); buzz([120, 80, 120]); }
+  else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(line, 600); buzz(200); }
+  else { sfx.workStart(); speak(line, 450); buzz(300); }
   updateNext(); renderBottom();
 }
 function updateNext() {
@@ -1051,13 +1336,13 @@ function tick() {
   if (rem <= 0) advance(Math.min(-rem, 1));
 }
 function cues(s, rem) {
-  const lead = settings.voiceLead, n = nextSeg(), voiceOn = settings.voice && "speechSynthesis" in window;
+  const lead = settings.voiceLead, voiceOn = settings.voice && (hasTTS || nvActive());
   const counting = voiceOn && s.dur >= lead + 2;
   // spoken count: "Rest in 3 ... 2 ... 1" (each number on its own beat so it stays in sync)
   for (let k = lead; k >= 1; k--) {
     if (rem <= k && rem > k - 1 && !R.fired.has("c" + k)) {
       R.fired.add("c" + k);
-      if (counting) speak(k === lead ? (n ? `${n.s.cue || segLabel(n.s, n.cycle)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`) : NUM[k]);
+      if (counting) speak(leadLine(R.plan, R.i, R.cycle, k));
       if (k <= 3) { if (!counting && s.dur > k + 0.5) sfx.pip(); buzz(40); }
     }
   }
@@ -1065,13 +1350,16 @@ function cues(s, rem) {
 function advance(carry = 0) {
   R.el = carry;
   if (R.i + 1 < R.plan.segs.length) R.i++;
-  else if (R.plan.loopFrom != null) { R.i = R.plan.loopFrom; R.cycle++; }
+  else if (R.plan.loopFrom != null) {
+    R.i = R.plan.loopFrom; R.cycle++;
+    if (nvActive()) planLines(R.plan, R.cycle + 2, R.cycle + 2).forEach(l => nvEnsure(l, false));   // endless timers: stay two rounds ahead
+  }
   else return finish();
   enterSeg();
 }
 function finish() {
   R.done = true; R.running = false;
-  sfx.finish(); speak(doneLine(), 900); buzz([300, 120, 300, 120, 600]);
+  sfx.finish(); speak(R.doneLine, 900); buzz([300, 120, 300, 120, 600]);
   dropWake(); musicPause(); unduck();
   $("#digits").textContent = "0"; $("#digits").className = "short"; $("#bar").style.width = "100%"; $("#fill").style.height = "100%";
   $("#doneStat").textContent = `${fmt(R.active)} · ${R.plan.segs.filter(s => s.kind === "work" || s.kind === "count" || s.kind === "up").length} intervals`;
@@ -1079,7 +1367,7 @@ function finish() {
 }
 function frame() {
   if (!R || !run.classList.contains("on")) return;
-  if (!R.done) {
+  if (!R.done && R.started) {
     const s = seg(), d = $("#digits");
     let txt, prog;
     if (s.dur == null) { txt = fmt(R.el); prog = (R.el % 60) / 60; }
@@ -1093,15 +1381,15 @@ function frame() {
   requestAnimationFrame(frame);
 }
 function togglePause() {
-  if (!R || R.done) return;
+  if (!R || R.done || !R.started) return;
   R.running = !R.running; R.last = performance.now();
   run.classList.toggle("paused", !R.running);
   sfx.pause(); buzz(R.running ? 60 : [40, 60, 40]);
-  if (R.running) { holdWake(); musicPlay(); } else { musicPause(); if ("speechSynthesis" in window) speechSynthesis.cancel(); }
+  if (R.running) { holdWake(); musicPlay(); } else { musicPause(); stopSpeech(); }
   renderBottom();
 }
 function skip(d) {
-  if (!R || R.done) return;
+  if (!R || R.done || !R.started) return;
   if (d > 0) return advance(0);
   if (R.el > 2 || R.i === 0) { R.el = 0; R.fired = new Set(); return; }
   R.i--; R.el = 0; enterSeg();
@@ -1109,6 +1397,7 @@ function skip(d) {
 function renderBottom() {
   const b = $("#runBottom");
   if (!R || R.done) { b.innerHTML = ""; return; }
+  if (!R.started) { b.innerHTML = `<div class="hint">Tap to start now · the phone voice covers any line that isn't ready</div>`; return; }
   const paused = !R.running;
   if (seg().hold && !paused) {
     b.innerHTML = `<div class="ctrls"><button class="main" data-act="next" aria-label="I'm ready">${ICON.play}</button></div>
@@ -1126,6 +1415,7 @@ run.addEventListener("pointerdown", e => {
   if (!R || R.done) return;
   const btn = e.target.closest("button");
   if (btn) return;
+  if (!R.started) { e.preventDefault(); return R.go(); }
   if (!settings.tapAnywhere) return;
   e.preventDefault();
   if (seg().hold && R.running) advance(0); else togglePause();
@@ -1139,7 +1429,7 @@ $("#runBottom").addEventListener("click", e => {
 const ex = $("#exitRun"); let exT = null;
 ex.addEventListener("pointerdown", e => {
   e.preventDefault();
-  if (!R || R.done) return endRun();
+  if (!R || R.done || !R.started) return endRun();
   ex.classList.add("charging");
   exT = setTimeout(endRun, 700);
 });
@@ -1147,14 +1437,14 @@ ex.addEventListener("pointerdown", e => {
 function teardownRun() {
   clearTimeout(exT); ex.classList.remove("charging");
   clearInterval(loopId);
-  if ("speechSynthesis" in window) speechSynthesis.cancel();
+  stopSpeech(); keepAlive(false);
   dropWake(); musicPause(); unduck();
-  run.classList.remove("paused");
+  run.classList.remove("paused", "prepping");
   const from = R?.from || "list"; R = null; return from;
 }
 /* Back during a workout: first press pauses, second press leaves */
 function runBack() {
-  if (!runForce && R && !R.done && R.running) { togglePause(); toast("Paused · press Back again to exit"); return false; }
+  if (!runForce && R && !R.done && R.running && R.started) { togglePause(); toast("Paused · press Back again to exit"); return false; }
   runForce = false; show(teardownRun());
 }
 function endRun() { runForce = true; back(); }
@@ -1164,6 +1454,7 @@ $("#doneAgain").onclick = () => { const t = R.t, f = R.from; teardownRun(); star
 /* keyboard: space = pause, arrows = skip, esc = exit */
 document.addEventListener("keydown", e => {
   if (!run.classList.contains("on") || !R) return;
+  if (!R.started) { if (e.code === "Escape") endRun(); else if (e.code === "Space") { e.preventDefault(); R.go(); } return; }
   if (e.code === "Space") { e.preventDefault(); togglePause(); }
   else if (e.code === "ArrowRight") skip(1);
   else if (e.code === "ArrowLeft") skip(-1);
@@ -1195,6 +1486,7 @@ $("#importPick").onchange = async e => {
 };
 applyTheme();
 renderList();
+if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>
 </html>
