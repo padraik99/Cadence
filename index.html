@@ -53,6 +53,8 @@ input{font:inherit;color:inherit}
 .hdr{display:flex;align-items:center;gap:12px;padding:calc(14px + var(--safe-t)) 16px 10px;max-width:672px;margin:0 auto;width:100%}
 .hdr h1{font-size:30px;font-weight:700;letter-spacing:-.02em;margin:0;flex:1}
 .hdr h1 span{color:var(--accent)}
+.hdr h1 small{display:block;margin-top:3px;font-size:11px;font-weight:600;letter-spacing:.14em;color:var(--faint);font-variant-numeric:tabular-nums}
+.about{text-align:center;color:var(--faint);font-size:12px;letter-spacing:.04em;padding:22px 0 4px}
 .hdr h2{font-size:17px;font-weight:600;margin:0;flex:1;text-align:center}
 .icon-btn{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--panel);border:1px solid var(--line)}
 .icon-btn svg{width:20px;height:20px}
@@ -227,7 +229,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <!-- ============ LIST ============ -->
 <section id="list" class="view on">
   <header class="hdr">
-    <h1>Cadence<span>.</span></h1>
+    <h1>Cadence<span>.</span><small id="ver"></small></h1>
     <button class="icon-btn" id="openSettings" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     </button>
@@ -313,6 +315,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
+const VERSION = "1.2", BUILT = "12 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -824,7 +827,8 @@ function renderSettings() {
     <div class="row"><div class="lbl">Restore / share<small>Add timers from an exported file</small></div><button class="txt-btn" id="importT" style="color:var(--text);background:var(--panel2)">Import</button></div>
   </div>
   ${!("vibrate" in navigator) ? `<div class="note">This browser doesn't support vibration (iPhone Safari blocks it).</div>` : ""}
-  ${!("wakeLock" in navigator) ? `<div class="note">This browser can't keep the screen on; set Auto-Lock to Never during workouts.</div>` : ""}`;
+  ${!("wakeLock" in navigator) ? `<div class="note">This browser can't keep the screen on; set Auto-Lock to Never during workouts.</div>` : ""}
+  <div class="about">Cadence ${VERSION} · ${BUILT}</div>`;
 }
 $("#openSettings").onclick = () => { renderSettings(); $("#setScrim").classList.add("on"); pushLayer(() => $("#setScrim").classList.remove("on")); };
 $("#setSheet").addEventListener("input", e => {
@@ -1485,6 +1489,7 @@ $("#importPick").onchange = async e => {
   } catch { toast("Couldn't read that file"); }
 };
 applyTheme();
+$("#ver").textContent = "v" + VERSION;
 renderList();
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
