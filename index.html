@@ -160,6 +160,11 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .swipe .sw-bg span{opacity:.55;transition:opacity .15s,transform .15s}
 .swipe.arm .sw-bg span{opacity:1;transform:scale(1.08)}
 .swipe-hint{color:var(--faint);font-size:13px;text-align:center;margin-top:18px}
+#cards .card{user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
+.swipe.lift{z-index:3;transition:none!important;box-shadow:0 14px 34px rgba(0,0,0,.35)}
+.swipe.lift .card{transform:scale(1.03)}
+.swipe.shift{transition:transform .2s cubic-bezier(.2,.8,.2,1)}
+.card .sub .mute{color:var(--faint)}
 .confirm-acts{display:flex;gap:10px;margin-top:18px}
 .confirm-acts button{flex:1;padding:16px;border-radius:16px;font-weight:700;background:var(--panel2);border:1px solid var(--line)}
 .confirm-acts .del{background:#e5484d;color:#fff;border-color:#e5484d}
@@ -182,6 +187,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 #run .top .cnt{min-width:44px;text-align:right;color:rgba(255,255,255,.7);font-variant-numeric:tabular-nums;font-size:15px;font-weight:600}
 .hold{position:relative;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08)}
 .hold svg.i{width:18px;height:18px}
+.vtog{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:rgba(255,255,255,.08);color:#fff;flex:none}
+.vtog svg{width:20px;height:20px}
+.vtog.off{color:rgba(255,255,255,.45)}
+.vtog:focus:not(:focus-visible){outline:none}
 .hold svg.ring{position:absolute;inset:0;width:44px;height:44px;transform:rotate(-90deg)}
 .hold circle{fill:none;stroke:#fff;stroke-width:3;stroke-dasharray:132;stroke-dashoffset:132}
 .hold.charging circle{transition:stroke-dashoffset .7s linear;stroke-dashoffset:0}
@@ -263,6 +272,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
     </button>
     <div class="ttl" id="runTitle"></div>
     <div class="cnt" id="runCount"></div>
+    <button class="vtog" id="voiceRun" aria-label="Voice on" aria-pressed="true"></button>
   </div>
   <div class="stage">
     <div id="phase"></div>
@@ -315,7 +325,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
-const VERSION = "1.2", BUILT = "12 Nov 2026";   // bump both with every release: shown under the app name and in Settings
+const VERSION = "1.3", BUILT = "13 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -349,6 +359,8 @@ const ICON = {
   next:  '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M16 5h2v14h-2zM4 5.5v13a.8.8 0 0 0 1.25.66l9.25-6.5a.8.8 0 0 0 0-1.32L5.25 4.84A.8.8 0 0 0 4 5.5z"/></svg>',
   copy:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"><rect x="8" y="8" width="12" height="12" rx="2.5"/><path d="M16 8V6.5A2.5 2.5 0 0 0 13.5 4h-7A2.5 2.5 0 0 0 4 6.5v7A2.5 2.5 0 0 0 6.5 16H8"/></svg>',
   trash: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>',
+  spk:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 19V5L7.5 9.5z" fill="currentColor"/><path d="M15.5 9a4 4 0 0 1 0 6M18.5 6.5a7.5 7.5 0 0 1 0 11"/></svg>',
+  spkOff:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9.5v5h3.5L12 19V5L7.5 9.5z" fill="currentColor"/><path d="M16 9.5l5 5M21 9.5l-5 5"/></svg>',
   x:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>'
 };
 const KIND_COLOR = { prep:"var(--prep)", warm:"var(--warm)", work:"var(--work)", rest:"var(--rest)", cool:"var(--cool)", count:"var(--count)", up:"var(--up)" };
@@ -370,7 +382,7 @@ let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
 const saveSettings = () => store.set("cadence.settings", settings);
 
 function newTimer(type) {
-  const base = { id: uid(), type, name: "", prepare: 10 };
+  const base = { id: uid(), type, name: "", prepare: 10, voice: true };
   if (type === "interval") return { ...base, warmup: { on: false, dur: 300, name: "" }, cooldown: { on: false, dur: 300, name: "" },
     work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1, setRest: { on: false, dur: 60, name: "", hold: false } };
   const between = { on: false, dur: 30, name: "", hold: false };
@@ -494,10 +506,10 @@ function renderList() {
     return `<div class="swipe" data-id="${t.id}"><div class="sw-bg">
       <span class="sw-dup">${ICON.copy} Duplicate</span><span class="sw-del">Delete ${ICON.trash}</span></div>
       <div class="card" data-id="${t.id}" style="--c:${m.c}">
-      <div class="meta"><div class="tag">${m.tag}</div><div class="name">${esc(t.name || defaultName(t))}</div><div class="sub">${esc(summary(t))}</div></div>
+      <div class="meta"><div class="tag">${m.tag}</div><div class="name">${esc(t.name || defaultName(t))}</div><div class="sub">${esc(summary(t))}${t.voice === false ? ' <span class="mute">· voice off</span>' : ""}</div></div>
       <button class="play" data-play="${t.id}" aria-label="Start ${esc(t.name || defaultName(t))}">${ICON.play}</button>
     </div></div>`;
-  }).join("") + `<div class="swipe-hint">Swipe a timer ← to delete · → to duplicate</div>`;
+  }).join("") + `<div class="swipe-hint">Swipe ← to delete · → to duplicate · hold and drag to reorder</div>`;
 }
 const defaultName = t => ({ interval: "Interval timer", countdown: "Countdown", countup: "Count up" }[t.type]);
 
@@ -522,16 +534,24 @@ async function deleteTimer(t) {
   if (ok) { timers = timers.filter(x => x.id !== t.id); saveTimers(); renderList(); toast("Timer deleted"); }
   return ok;
 }
-/* swipe: left = delete (confirmed), right = duplicate */
-let sw = null, swiped = false;
+/* swipe: left = delete (confirmed), right = duplicate.
+   hold still ~0.4 s, then drag: reorder. Moving before the hold fires means swipe or scroll instead. */
+let sw = null, swiped = false, dg = null;
+const HOLD_MS = 420;
 $("#cards").addEventListener("pointerdown", e => {
-  const c = e.target.closest(".card"); if (!c || e.target.closest(".play")) return;
+  const c = e.target.closest(".card"); if (!c || e.target.closest(".play") || dg) return;
   sw = { c, wrap: c.parentElement, x: e.clientX, y: e.clientY, dx: 0, lock: null, id: e.pointerId };
+  if (timers.length > 1) sw.holdT = setTimeout(() => sw && !sw.lock && dragStart(sw, e.pointerId), HOLD_MS);
 });
+$("#cards").addEventListener("contextmenu", e => { if (e.target.closest(".card")) e.preventDefault(); });   // Android long-press menu
+/* once dragging, stop the page from scrolling under the finger (needs a non-passive touch listener) */
+$("#cards").addEventListener("touchmove", e => { if (dg && e.cancelable) e.preventDefault(); }, { passive: false });
 addEventListener("pointermove", e => {
+  if (dg && e.pointerId === dg.id) return dragMove(e.clientY);
   if (!sw || e.pointerId !== sw.id) return;
   const dx = e.clientX - sw.x, dy = e.clientY - sw.y;
   if (!sw.lock) {
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) clearTimeout(sw.holdT);
     if (Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) { sw.lock = "x"; try { sw.c.setPointerCapture(e.pointerId); } catch {} }
     else if (Math.abs(dy) > 10) { sw = null; return; } else return;
   }
@@ -542,8 +562,9 @@ addEventListener("pointermove", e => {
   sw.wrap.classList.toggle("l", d < 0); sw.wrap.classList.toggle("r", d > 0); sw.wrap.classList.toggle("arm", armed);
 });
 const swipeEnd = async e => {
+  if (dg && e.pointerId === dg.id) return dragEnd();
   if (!sw || e.pointerId !== sw.id) return;
-  const s = sw; sw = null; if (s.lock !== "x") return;
+  const s = sw; sw = null; clearTimeout(s.holdT); if (s.lock !== "x") return;
   swiped = true; setTimeout(() => swiped = false, 80);
   const t = timers.find(x => x.id === s.wrap.dataset.id), back = () => { s.c.style.transform = ""; s.wrap.classList.remove("arm"); };
   s.c.style.transition = "transform .28s cubic-bezier(.2,.8,.2,1)";
@@ -552,6 +573,43 @@ const swipeEnd = async e => {
   else back();
 };
 addEventListener("pointerup", swipeEnd); addEventListener("pointercancel", swipeEnd);
+
+function dragStart(s, id) {
+  sw = null;
+  const wraps = [...$("#cards").querySelectorAll(".swipe")], from = wraps.indexOf(s.wrap);
+  const tops = wraps.map(w => w.getBoundingClientRect().top), step = wraps.length > 1 ? tops[1] - tops[0] : s.wrap.offsetHeight;
+  dg = { id, wrap: s.wrap, wraps, from, to: from, y0: s.y, y: s.y, tops, step, sc: $("#list .scroll"), sc0: $("#list .scroll").scrollTop };
+  try { s.c.setPointerCapture(id); } catch {}
+  s.wrap.classList.add("lift"); wraps.forEach(w => w !== s.wrap && w.classList.add("shift"));
+  buzz(25); dragScroll();
+}
+function dragMove(y) {
+  dg.y = y;
+  const off = y - dg.y0 + (dg.sc.scrollTop - dg.sc0);
+  dg.wrap.style.transform = `translateY(${off}px)`;
+  const to = clamp(dg.from + Math.round(off / dg.step), 0, dg.wraps.length - 1);
+  if (to === dg.to) return;
+  dg.to = to; buzz(8);
+  dg.wraps.forEach((w, i) => {
+    if (w === dg.wrap) return;
+    const sh = dg.from < to && i > dg.from && i <= to ? -dg.step : dg.from > to && i < dg.from && i >= to ? dg.step : 0;
+    w.style.transform = sh ? `translateY(${sh}px)` : "";
+  });
+}
+/* near the top or bottom edge, scroll the list so a timer can be dragged past what's on screen */
+function dragScroll() {
+  if (!dg) return;
+  const r = dg.sc.getBoundingClientRect(), edge = 70;
+  const v = dg.y < r.top + edge ? -(r.top + edge - dg.y) / 4 : dg.y > r.bottom - edge - 100 ? (dg.y - (r.bottom - edge - 100)) / 4 : 0;
+  if (v) { const before = dg.sc.scrollTop; dg.sc.scrollTop += clamp(v, -18, 18); if (dg.sc.scrollTop !== before) dragMove(dg.y); }
+  requestAnimationFrame(dragScroll);
+}
+function dragEnd() {
+  const d = dg; dg = null;
+  swiped = true; setTimeout(() => swiped = false, 80);   // the lift-off isn't a tap on the card
+  if (d.to !== d.from) { const [t] = timers.splice(d.from, 1); timers.splice(d.to, 0, t); saveTimers(); }
+  renderList();
+}
 
 $("#cards").addEventListener("click", e => {
   if (swiped) return;
@@ -633,7 +691,8 @@ function renderEdit() {
     <input class="name-in big-name" data-path="name" placeholder="${defaultName(t)}" value="${esc(t.name)}" maxlength="40" aria-label="Timer name"></div></div>`;
 
   h += `<div class="sec">Start</div><div class="group">
-    <div class="row"><div class="lbl">Prepare<small>Get-ready countdown before starting</small></div>${numHTML("prepare", t.prepare, 0, 300, "s")}</div></div>`;
+    <div class="row"><div class="lbl">Prepare<small>Get-ready countdown before starting</small></div>${numHTML("prepare", t.prepare, 0, 300, "s")}</div>
+    <div class="row"><div class="lbl">Voice guidance<small>${settings.voice ? "Off = chimes and pips only, for this timer" : "Voice is off for all timers in Settings"}</small></div>${togHTML("voice", t.voice !== false, false)}</div></div>`;
 
   if (t.type === "interval") {
     h += `<div class="sec">Warm up</div><div class="group">
@@ -927,8 +986,10 @@ if ("speechSynthesis" in window) speechSynthesis.onvoiceschanged = () => { voice
 const hasTTS = "speechSynthesis" in window;
 let speakT = null;
 /* Every spoken line comes through here. Natural voice if that line is already synthesized, otherwise the phone's voice. */
+/* during a workout the run's own switch decides (timer setting, or the speaker button mid-workout); otherwise Settings does */
+const voiceWanted = () => R ? !R.quiet : settings.voice;
 function speak(text, delay = 0) {
-  if (!settings.voice || settings.volume === 0) return;
+  if (!voiceWanted() || settings.volume === 0) return;
   clearTimeout(speakT);
   if (nvActive() && ac && ac.state === "running") {
     const clip = nv.mem.get(nvKey(text));
@@ -1078,7 +1139,7 @@ function nvWarm(delay = 2500) {
   warmT = setTimeout(() => {
     if (!nvActive() || R) return;
     const lead = NUM[settings.voiceLead], lines = ["two", "one", "three", "four", `Rest in ${lead}`, `Work in ${lead}`, `Finishing in ${lead}`, "Get set", "Workout complete.", "Rest. Tap when you're ready."];
-    if (!settings.playful) for (const t of timers) { const plan = buildPlan(t); lines.push(...planLines(plan, 1, plan.loopFrom != null ? 3 : 1, "Workout complete.")); }
+    if (!settings.playful) for (const t of timers.filter(t => t.voice !== false)) { const plan = buildPlan(t); lines.push(...planLines(plan, 1, plan.loopFrom != null ? 3 : 1, "Workout complete.")); }
     [...new Set(lines)].slice(0, 160).forEach(l => nvEnsure(l, false));
   }, delay);
 }
@@ -1211,18 +1272,19 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 let R = null, loopId = null;
 const run = $("#run");
 let runForce = false;
-function startRun(t, mode = "push", from) {
+function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !== false)) {
   ensureAudio();
   from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
   const me = R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from,
-    started: false, doneLine: doneLine() };
+    started: false, doneLine: doneLine(), quiet };
+  renderVoiceBtn();
   if (mode === "push") pushLayer(runBack); else if (mode === "replace") replaceLayer(runBack);
   $("#runTitle").textContent = t.name || defaultName(t);
   $("#done").classList.remove("on");
   show("run");
   holdWake(); clearInterval(loopId);
-  if (settings.voice && settings.volume > 0) keepAlive(true);
+  if (settings.volume > 0) keepAlive(true);   // keeps Bluetooth awake for chimes too, not just speech
   const go = me.go = () => {
     if (R !== me || me.started) return;
     me.started = true; me.last = performance.now(); me.startedAt = Date.now();
@@ -1232,7 +1294,7 @@ function startRun(t, mode = "push", from) {
     requestAnimationFrame(frame);
   };
   /* Natural voice: synthesize every line this workout will say before the clock starts, so each one lands on its beat */
-  const lines = nvActive() && settings.volume > 0 ? planLines(plan, 1, plan.loopFrom != null ? 3 : 1) : [];
+  const lines = nvActive() && !quiet && settings.volume > 0 ? planLines(plan, 1, plan.loopFrom != null ? 3 : 1) : [];
   if (lines.every(l => nv.mem.has(nvKey(l)))) return go();
   const s0 = plan.segs[0], total = new Set(lines).size;
   run.classList.add("prepping"); run.style.setProperty("--c", KIND_COLOR[s0.kind]);
@@ -1340,7 +1402,7 @@ function tick() {
   if (rem <= 0) advance(Math.min(-rem, 1));
 }
 function cues(s, rem) {
-  const lead = settings.voiceLead, voiceOn = settings.voice && (hasTTS || nvActive());
+  const lead = settings.voiceLead, voiceOn = voiceWanted() && (hasTTS || nvActive());
   const counting = voiceOn && s.dur >= lead + 2;
   // spoken count: "Rest in 3 ... 2 ... 1" (each number on its own beat so it stays in sync)
   for (let k = lead; k >= 1; k--) {
@@ -1453,7 +1515,22 @@ function runBack() {
 }
 function endRun() { runForce = true; back(); }
 $("#doneClose").onclick = endRun;
-$("#doneAgain").onclick = () => { const t = R.t, f = R.from; teardownRun(); startRun(t, "none", f); };
+$("#doneAgain").onclick = () => { const t = R.t, f = R.from, q = R.quiet; teardownRun(); startRun(t, "none", f, q); };
+
+/* speaker button: voice on/off for this workout, any time (the timer's own setting is in its editor) */
+function renderVoiceBtn() {
+  const b = $("#voiceRun"), on = R && !R.quiet;
+  b.innerHTML = on ? ICON.spk : ICON.spkOff; b.classList.toggle("off", !on);
+  b.setAttribute("aria-pressed", on ? "true" : "false"); b.setAttribute("aria-label", on ? "Voice on — tap to mute" : "Voice off — tap to unmute");
+}
+function toggleVoice() {
+  if (!R) return;
+  R.quiet = !R.quiet; renderVoiceBtn(); buzz(30);
+  if (R.quiet) { stopSpeech(); toast("Voice off · chimes only"); return; }
+  toast("Voice on");
+  if (nvActive()) planLines(R.plan, R.cycle, R.cycle + (R.plan.loopFrom != null ? 1 : 0)).forEach(l => nvEnsure(l, false));   // lines skipped at start: phone voice until they're ready
+}
+$("#voiceRun").addEventListener("click", toggleVoice);
 
 /* keyboard: space = pause, arrows = skip, esc = exit */
 document.addEventListener("keydown", e => {
@@ -1463,6 +1540,7 @@ document.addEventListener("keydown", e => {
   else if (e.code === "ArrowRight") skip(1);
   else if (e.code === "ArrowLeft") skip(-1);
   else if (e.code === "Escape") endRun();
+  else if (e.code === "KeyV") toggleVoice();
 });
 
 function applyTheme() {

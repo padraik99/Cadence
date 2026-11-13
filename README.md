@@ -16,6 +16,8 @@ A clean, offline workout timer that runs in the browser and installs to your pho
 - Name each interval, or leave it blank for automatic numbering.
 - Duplicate an interval or the whole list.
 - Swipe a timer left to delete it or right to duplicate it.
+- Hold a timer for a moment, then drag to reorder the list.
+- Turn voice guidance off for a single timer in its editor (chimes and pips still play), or tap the speaker button during a workout to mute or unmute it for that run.
 - Export or import timers to back them up or share them.
 
 ## Install on Android
