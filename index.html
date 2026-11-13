@@ -168,6 +168,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .confirm-acts{display:flex;gap:10px;margin-top:18px}
 .confirm-acts button{flex:1;padding:16px;border-radius:16px;font-weight:700;background:var(--panel2);border:1px solid var(--line)}
 .confirm-acts .del{background:#e5484d;color:#fff;border-color:#e5484d}
+.confirm-acts .go{background:var(--text);color:var(--bg);border-color:var(--text)}
 .note{color:var(--faint);font-size:13px;line-height:1.5;padding:10px 4px 0}
 .nvrow{cursor:pointer}
 .nvrow .radio{width:22px;height:22px;border-radius:50%;border:2px solid var(--line);flex:none;display:grid;place-items:center}
@@ -191,6 +192,14 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 .vtog svg{width:20px;height:20px}
 .vtog.off{color:rgba(255,255,255,.45)}
 .vtog:focus:not(:focus-visible){outline:none}
+.ctrls .ext{width:auto;height:52px;padding:0 22px;border-radius:26px;font-weight:700;font-size:17px;font-variant-numeric:tabular-nums}
+.loghead{display:flex;gap:10px;margin:2px 0 6px}
+.loghead div{flex:1;background:var(--panel2);border:1px solid var(--line);border-radius:14px;padding:12px 14px}
+.loghead b{display:block;font-size:22px;font-variant-numeric:tabular-nums}
+.loghead small{color:var(--muted);font-size:13px}
+.logrow .lbl small{font-variant-numeric:tabular-nums}
+.logrow .tm{color:var(--muted);font-variant-numeric:tabular-nums;font-size:15px;flex:none;text-align:right}
+.logrow .tm i{display:block;font-style:normal;font-size:12px;color:var(--faint)}
 .hold svg.ring{position:absolute;inset:0;width:44px;height:44px;transform:rotate(-90deg)}
 .hold circle{fill:none;stroke:#fff;stroke-width:3;stroke-dasharray:132;stroke-dashoffset:132}
 .hold.charging circle{transition:stroke-dashoffset .7s linear;stroke-dashoffset:0}
@@ -239,6 +248,9 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 <section id="list" class="view on">
   <header class="hdr">
     <h1>Cadence<span>.</span><small id="ver"></small></h1>
+    <button class="icon-btn" id="openLog" aria-label="History">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3.5 12a8.5 8.5 0 1 0 2.5-6"/><path d="M3 4v4h4"/><path d="M12 8v4.5l3 2"/></svg>
+    </button>
     <button class="icon-btn" id="openSettings" aria-label="Settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg>
     </button>
@@ -315,6 +327,10 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
   <div class="sheet" role="dialog" aria-label="Settings" id="setSheet"></div>
 </div>
 
+<div class="scrim" id="logScrim">
+  <div class="sheet" role="dialog" aria-label="History" id="logSheet"></div>
+</div>
+
 <div class="scrim" id="confScrim"><div class="sheet" role="alertdialog" id="confSheet"></div></div>
 <div class="toast" id="toast"></div>
 <audio id="music" preload="auto" playsinline></audio>
@@ -325,7 +341,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
-const VERSION = "1.3", BUILT = "13 Nov 2026";   // bump both with every release: shown under the app name and in Settings
+const VERSION = "1.4", BUILT = "13 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -374,6 +390,7 @@ const TYPE_META = {
    State
    ========================================================= */
 const DEFAULT_SETTINGS = {
+  halfway: false,
   volume: 0.8, voice: true, voiceLead: 3, beeps: true, haptics: true,
   tapAnywhere: true, keepAwake: true, headphoneDuck: true, music: false, playful: false, theme: "system", voiceURI: "", pace: "normal", tone: "natural",
   voiceMode: "phone", nvVoice: ""   // voiceMode "natural" = on-device neural voice (Piper), nvVoice = which one
@@ -513,11 +530,11 @@ function renderList() {
 }
 const defaultName = t => ({ interval: "Interval timer", countdown: "Countdown", countup: "Count up" }[t.type]);
 
-function confirmSheet(title, msg, ok = "Delete") {
+function confirmSheet(title, msg, ok = "Delete", cancel = "Cancel", style = "del") {
   return new Promise(res => {
     const sc = $("#confScrim");
     $("#confSheet").innerHTML = `<div class="grab"></div><h3>${esc(title)}</h3><div style="color:var(--muted);padding:0 4px">${esc(msg)}</div>
-      <div class="confirm-acts"><button data-c="0">Cancel</button><button class="del" data-c="1">${esc(ok)}</button></div>`;
+      <div class="confirm-acts"><button data-c="0">${esc(cancel)}</button><button class="${style}" data-c="1">${esc(ok)}</button></div>`;
     let val = false;
     sc.onclick = e => { const b = e.target.closest("[data-c]"); if (b) { val = b.dataset.c === "1"; back(); } };
     sc.classList.add("on");
@@ -853,6 +870,7 @@ function renderSettings() {
     <div class="row"><div class="lbl" style="flex:none;width:64px">Volume</div>
       <input type="range" id="vol" min="0" max="100" value="${p}" style="--p:${p}%" aria-label="Volume"><span id="volv" style="width:4ch;text-align:right;color:var(--muted);font-variant-numeric:tabular-nums">${p}%</span></div>
     <div class="row"><div class="lbl">Interval sounds<small>Chimes, countdown pips</small></div>${togHTML("beeps", s.beeps, false)}</div>
+    <div class="row"><div class="lbl">Halfway chime<small>On intervals of a minute or more${s.voice ? ", with “Halfway”" : ""}</small></div>${togHTML("halfway", s.halfway, false)}</div>
     <div class="row"><div class="lbl">Voice guidance<small>Announces each interval and what's next</small></div>${togHTML("voice", s.voice)}</div>
     ${s.voice ? `${nv.ok ? `<div class="row"><div class="lbl">Voice quality<small>${natural ? "Natural runs on this phone, no signal needed" : "Phone uses the built-in voice"}</small></div>
       <div class="seg3"><button data-vm="phone" class="${natural ? "" : "on"}">Phone</button><button data-vm="natural" class="${natural ? "on" : ""}">Natural</button></div></div>` : ""}
@@ -882,7 +900,7 @@ function renderSettings() {
     <div class="row"><div class="lbl">Theme</div><div class="seg3" id="theme">${["system", "light", "dark"].map(m => `<button data-th="${m}" class="${s.theme === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
   </div>
   <div class="sec">Your timers</div><div class="group">
-    <div class="row"><div class="lbl">Back up<small>${timers.length} timer${timers.length === 1 ? "" : "s"} · saved on this device automatically</small></div><button class="txt-btn" id="exportT" style="color:var(--text);background:var(--panel2)">Export</button></div>
+    <div class="row"><div class="lbl">Back up<small>${timers.length} timer${timers.length === 1 ? "" : "s"} and history · saved on this device automatically</small></div><button class="txt-btn" id="exportT" style="color:var(--text);background:var(--panel2)">Export</button></div>
     <div class="row"><div class="lbl">Restore / share<small>Add timers from an exported file</small></div><button class="txt-btn" id="importT" style="color:var(--text);background:var(--panel2)">Import</button></div>
   </div>
   ${!("vibrate" in navigator) ? `<div class="note">This browser doesn't support vibration (iPhone Safari blocks it).</div>` : ""}
@@ -961,6 +979,7 @@ const sfx = {
   restStart() { if (!this.ok()) return; duck(1.2); bell(783.99, 0, 1.0, 0.26); bell(523.25, 0.16, 1.6, 0.26); },
   phase()     { if (!this.ok()) return; duck(1); bell(698.46, 0, 1.3, 0.28); },
   pause()     { if (!this.ok()) return; bell(440, 0, 0.18, 0.18); },
+  half()      { if (!this.ok()) return; duck(1); bell(1046.5, 0, 0.5, 0.26, "triangle"); bell(1046.5, 0.22, 0.7, 0.26, "triangle"); },
   finish()    { if (!this.ok()) return; duck(2.5); [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => bell(f, i * 0.13, 1.8, 0.24, "triangle")); bell(1318.5, 0.6, 2.4, 0.16); }
 };
 
@@ -1138,7 +1157,7 @@ function nvWarm(delay = 2500) {
   clearTimeout(warmT);
   warmT = setTimeout(() => {
     if (!nvActive() || R) return;
-    const lead = NUM[settings.voiceLead], lines = ["two", "one", "three", "four", `Rest in ${lead}`, `Work in ${lead}`, `Finishing in ${lead}`, "Get set", "Workout complete.", "Rest. Tap when you're ready."];
+    const lead = NUM[settings.voiceLead], lines = ["two", "one", "three", "four", EXT_LINE, HALF_LINE, `Rest in ${lead}`, `Work in ${lead}`, `Finishing in ${lead}`, "Get set", "Workout complete.", "Rest. Tap when you're ready."];
     if (!settings.playful) for (const t of timers.filter(t => t.voice !== false)) { const plan = buildPlan(t); lines.push(...planLines(plan, 1, plan.loopFrom != null ? 3 : 1, "Workout complete.")); }
     [...new Set(lines)].slice(0, 160).forEach(l => nvEnsure(l, false));
   }, delay);
@@ -1272,7 +1291,7 @@ document.addEventListener("visibilitychange", () => { if (document.visibilitySta
 let R = null, loopId = null;
 const run = $("#run");
 let runForce = false;
-function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !== false)) {
+function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !== false), resume = null) {
   ensureAudio();
   from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
@@ -1289,7 +1308,11 @@ function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !=
     if (R !== me || me.started) return;
     me.started = true; me.last = performance.now(); me.startedAt = Date.now();
     run.classList.remove("prepping");
-    musicPlay(); enterSeg(true); renderBottom();
+    if (resume) {   // picked up after the app was closed: same spot, paused, nothing said until they press play
+      Object.assign(me, { i: resume.i, el: resume.el, cycle: resume.cycle, active: resume.active, startedAt: resume.startedAt, running: false });
+      run.classList.add("paused"); enterSeg(true, true);
+    } else { musicPlay(); enterSeg(true); }
+    renderBottom();
     loopId = setInterval(tick, 100);
     requestAnimationFrame(frame);
   };
@@ -1329,15 +1352,21 @@ function leadLine(plan, i, c, k) {
   const n = stepFrom(plan, i, c), ns = n && plan.segs[n.i];
   return ns ? `${ns.cue || ns.label.replace("#", n.c)} in ${NUM[k]}` : `Finishing in ${NUM[k]}`;
 }
+const HALF_LINE = "Halfway", EXT_LINE = "Fifteen more seconds", EXT_SEC = 15;
+const isMain = s => s.kind === "work" || s.kind === "count" || s.kind === "up";
+const halfway = s => settings.halfway && s.dur >= 60 && isMain(s);
+const extendable = s => s.kind === "rest" && s.dur != null;
 /* every line the plan can say during loops c0..c1, in the order they'll be needed */
 function planLines(plan, c0, c1, done = R?.doneLine) {
   const out = [], lead = settings.voiceLead;
   for (let c = c0; c <= c1; c++) plan.segs.forEach((s, i) => {
     if (c > 1 && (plan.loopFrom == null || i < plan.loopFrom)) return;
     out.push(entryLine(plan, i, c));
+    if (halfway(s)) out.push(HALF_LINE);
     if (s.dur != null && s.dur >= lead + 2) for (let k = lead; k >= 1; k--) out.push(leadLine(plan, i, c, k));
   });
   if (plan.loopFrom == null && done) out.push(done);
+  if (plan.segs.some(extendable)) out.push(EXT_LINE);
   return out;
 }
 const seg = () => R.plan.segs[R.i];
@@ -1369,7 +1398,7 @@ const restLine = (s, d) => settings.playful ? (s.say !== "Rest" ? s.say + ". " :
 const doneLine = () => settings.playful ? pick(PHRASES.done) : "Workout complete.";
 const NUM = ["zero", "one", "two", "three", "four", "five"];
 
-function enterSeg(first) {
+function enterSeg(first, silent) {
   const s = seg();
   R.fired = new Set();
   run.style.setProperty("--c", KIND_COLOR[s.kind]);
@@ -1377,12 +1406,13 @@ function enterSeg(first) {
   $("#runCount").textContent = workCount();
   const d = $("#digits"); d.classList.remove("pulse"); void d.offsetWidth; d.classList.add("pulse");
   const line = entryLine(R.plan, R.i, R.cycle);
-  if (s.kind === "prep" && s.auto) { sfx.phase(); speak(line, 150); buzz(80); }
+  if (silent) ;
+  else if (s.kind === "prep" && s.auto) { sfx.phase(); speak(line, 150); buzz(80); }
   else if (s.kind === "prep") { sfx.phase(); speak(line, 250); buzz(80); }
   else if (s.kind === "rest") { sfx.restStart(); speak(line, 600); buzz([120, 80, 120]); }
   else if (s.kind === "warm" || s.kind === "cool") { sfx.phase(); speak(line, 600); buzz(200); }
   else { sfx.workStart(); speak(line, 450); buzz(300); }
-  updateNext(); renderBottom();
+  updateNext(); renderBottom(); snapSave();
 }
 function updateNext() {
   let n = segAt(1); if (n && n.s.auto) n = segAt(2);
@@ -1394,6 +1424,7 @@ function tick() {
   const now = performance.now(), dt = Math.min((now - R.last) / 1000, 5);
   R.last = now;
   if (!R.running) return;
+  if (now - (R.saved || 0) > 2000) snapSave();
   R.el += dt; R.active += dt;
   const s = seg();
   if (s.dur == null) return;
@@ -1404,6 +1435,9 @@ function tick() {
 function cues(s, rem) {
   const lead = settings.voiceLead, voiceOn = voiceWanted() && (hasTTS || nvActive());
   const counting = voiceOn && s.dur >= lead + 2;
+  if (halfway(s) && rem <= s.dur / 2 && !R.fired.has("h")) {
+    R.fired.add("h"); sfx.half(); buzz([60, 60, 60]); if (voiceOn) speak(HALF_LINE, 350);
+  }
   // spoken count: "Rest in 3 ... 2 ... 1" (each number on its own beat so it stays in sync)
   for (let k = lead; k >= 1; k--) {
     if (rem <= k && rem > k - 1 && !R.fired.has("c" + k)) {
@@ -1425,6 +1459,7 @@ function advance(carry = 0) {
 }
 function finish() {
   R.done = true; R.running = false;
+  logRun(true); snapClear();
   sfx.finish(); speak(R.doneLine, 900); buzz([300, 120, 300, 120, 600]);
   dropWake(); musicPause(); unduck();
   $("#digits").textContent = "0"; $("#digits").className = "short"; $("#bar").style.width = "100%"; $("#fill").style.height = "100%";
@@ -1450,7 +1485,7 @@ function togglePause() {
   if (!R || R.done || !R.started) return;
   R.running = !R.running; R.last = performance.now();
   run.classList.toggle("paused", !R.running);
-  sfx.pause(); buzz(R.running ? 60 : [40, 60, 40]);
+  sfx.pause(); buzz(R.running ? 60 : [40, 60, 40]); snapSave();
   if (R.running) { holdWake(); musicPlay(); } else { musicPause(); stopSpeech(); }
   renderBottom();
 }
@@ -1465,13 +1500,14 @@ function renderBottom() {
   if (!R || R.done) { b.innerHTML = ""; return; }
   if (!R.started) { b.innerHTML = `<div class="hint">Tap to start now · the phone voice covers any line that isn't ready</div>`; return; }
   const paused = !R.running;
+  const ext = extendable(seg()) && !paused ? `<div class="ctrls"><button class="ext" data-act="ext" aria-label="Add ${EXT_SEC} seconds of rest">+${EXT_SEC} s</button></div>` : "";
   if (seg().hold && !paused) {
     b.innerHTML = `<div class="ctrls"><button class="main" data-act="next" aria-label="I'm ready">${ICON.play}</button></div>
       <div class="hint">${settings.tapAnywhere ? "Tap anywhere when you're ready" : "Tap ▶ when you're ready"}</div>`;
     return;
   }
-  if (settings.tapAnywhere && !paused) { b.innerHTML = `<div class="hint">Tap anywhere to pause</div>`; return; }
-  b.innerHTML = `<div class="ctrls">
+  if (settings.tapAnywhere && !paused) { b.innerHTML = `${ext}<div class="hint">Tap anywhere to pause</div>`; return; }
+  b.innerHTML = `${ext}<div class="ctrls">
     <button data-act="prev" aria-label="Previous">${ICON.prev}</button>
     <button class="main" data-act="toggle" aria-label="${paused ? "Resume" : "Pause"}">${paused ? ICON.play : ICON.pause}</button>
     <button data-act="next" aria-label="Skip">${ICON.next}</button></div>
@@ -1488,7 +1524,7 @@ run.addEventListener("pointerdown", e => {
 });
 $("#runBottom").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
-  if (a === "toggle") togglePause(); else if (a === "prev") skip(-1); else if (a === "next") skip(1);
+  if (a === "toggle") togglePause(); else if (a === "prev") skip(-1); else if (a === "next") skip(1); else if (a === "ext") extendRest();
 });
 
 /* hold-to-exit: needs a 0.7s press while running so a stray tap can't end a workout */
@@ -1506,6 +1542,7 @@ function teardownRun() {
   stopSpeech(); keepAlive(false);
   dropWake(); musicPause(); unduck();
   run.classList.remove("paused", "prepping");
+  logRun(false); snapClear();
   const from = R?.from || "list"; R = null; return from;
 }
 /* Back during a workout: first press pauses, second press leaves */
@@ -1532,6 +1569,74 @@ function toggleVoice() {
 }
 $("#voiceRun").addEventListener("click", toggleVoice);
 
+/* +15 s: more rest, without having to make the rest open-ended */
+function extendRest() {
+  if (!R || R.done || !R.started || !R.running || !extendable(seg())) return;
+  R.el -= EXT_SEC; R.fired = new Set();   // count-in starts over at the new end
+  stopSpeech(); speak(EXT_LINE, 120); buzz(40); snapSave();
+}
+
+/* ---- history: one entry per workout (finished, or stopped after at least a minute) ---- */
+const LOG_KEY = "cadence.log";
+let runLog = store.get(LOG_KEY, []);
+const saveLog = () => store.set(LOG_KEY, runLog);
+function logRun(done) {
+  if (!R || R.logged || !R.started) return;
+  const p = R.plan, endless = p.loopFrom != null || p.segs.some(s => s.dur == null && !s.hold);
+  if (!done && R.active < 60) return;
+  R.logged = true;
+  const main = p.segs.filter(isMain).length;
+  const note = done ? (main > 1 ? `${main} intervals` : "") : p.loopFrom != null ? `${R.cycle} round${R.cycle > 1 ? "s" : ""}` : endless ? "" : "stopped early";
+  runLog.unshift({ at: R.startedAt, name: R.t.name || defaultName(R.t), type: R.t.type, active: Math.round(R.active), note });
+  if (runLog.length > 500) runLog.length = 500;
+  saveLog();
+}
+function renderLog() {
+  const d0 = d => { d = new Date(d); return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
+  const today = d0(Date.now()), week = runLog.filter(r => r.at >= today - 6 * 864e5);
+  const dayName = t => t === today ? "Today" : t === today - 864e5 ? "Yesterday"
+    : new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+  let h = `<div class="grab"></div><h3>History</h3>`;
+  if (!runLog.length) { $("#logSheet").innerHTML = h + `<div class="note" style="padding-bottom:20px">Finished workouts show up here, plus any you stop after at least a minute.</div>`; return; }
+  h += `<div class="loghead"><div><b>${week.length}</b><small>workouts · last 7 days</small></div>
+    <div><b>${fmt(week.reduce((a, r) => a + r.active, 0))}</b><small>active time · last 7 days</small></div></div>`;
+  let day = null;
+  runLog.slice(0, 150).forEach(r => {
+    const d = d0(r.at);
+    if (d !== day) { h += `${day == null ? "" : "</div>"}<div class="sec">${esc(dayName(d))}</div><div class="group">`; day = d; }
+    const when = new Date(r.at).toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+    h += `<div class="row logrow"><div class="lbl">${esc(r.name)}<small>${esc(when)}${r.note ? " · " + esc(r.note) : ""}</small></div><div class="tm">${fmt(r.active)}<i>active</i></div></div>`;
+  });
+  h += `</div><button class="danger" id="clearLog">Clear history</button>`;
+  $("#logSheet").innerHTML = h;
+}
+$("#openLog").onclick = () => { renderLog(); $("#logScrim").classList.add("on"); $("#logSheet").scrollTop = 0; pushLayer(() => $("#logScrim").classList.remove("on")); };
+$("#logSheet").addEventListener("click", async e => {
+  if (e.target.id !== "clearLog") return;
+  if (await confirmSheet("Clear history?", "Removes every logged workout from this device. Timers aren't affected.", "Clear")) { runLog = []; saveLog(); renderLog(); toast("History cleared"); }
+});
+
+/* ---- resume: if the phone closes the app mid-workout, offer to pick up where it stopped ---- */
+const SNAP_KEY = "cadence.resume";
+function snapSave() {
+  if (!R || !R.started || R.done) return;
+  R.saved = performance.now();
+  store.set(SNAP_KEY, { t: R.t, i: R.i, el: R.el, cycle: R.cycle, active: R.active, startedAt: R.startedAt, quiet: R.quiet, at: Date.now() });
+}
+function snapClear() { try { localStorage.removeItem(SNAP_KEY); } catch {} }
+addEventListener("pagehide", snapSave);
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") snapSave(); });
+function offerResume() {
+  const sn = store.get(SNAP_KEY, null); if (!sn) return;
+  const t = normalize(sn.t), s = t && buildPlan(t).segs[sn.i];
+  if (!s || Date.now() - sn.at > 3 * 3600e3) return snapClear();   // too old to be the same workout
+  const ago = Math.round((Date.now() - sn.at) / 60000);
+  confirmSheet(`Resume “${t.name || defaultName(t)}”?`,
+    `The app closed ${ago < 1 ? "just now" : ago === 1 ? "a minute ago" : ago + " minutes ago"}, during ${s.label.replace("#", sn.cycle)} with ${fmt(sn.active)} done. It picks up at the same spot, paused.`,
+    "Resume", "Discard", "go")
+    .then(ok => { snapClear(); if (ok) setTimeout(() => startRun(t, "push", "list", sn.quiet, sn), 0); });
+}
+
 /* keyboard: space = pause, arrows = skip, esc = exit */
 document.addEventListener("keydown", e => {
   if (!run.classList.contains("on") || !R) return;
@@ -1541,6 +1646,7 @@ document.addEventListener("keydown", e => {
   else if (e.code === "ArrowLeft") skip(-1);
   else if (e.code === "Escape") endRun();
   else if (e.code === "KeyV") toggleVoice();
+  else if (e.code === "ArrowUp") { e.preventDefault(); extendRest(); }
 });
 
 function applyTheme() {
@@ -1551,7 +1657,7 @@ function applyTheme() {
 }
 matchMedia("(prefers-color-scheme: light)").addEventListener?.("change", applyTheme);
 function exportTimers() {
-  const blob = new Blob([JSON.stringify({ app: "cadence", version: 1, timers }, null, 2)], { type: "application/json" });
+  const blob = new Blob([JSON.stringify({ app: "cadence", version: 1, timers, log: runLog }, null, 2)], { type: "application/json" });
   const a = document.createElement("a"), d = new Date();
   a.href = URL.createObjectURL(blob); a.download = `cadence-timers-${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.json`;
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
@@ -1563,12 +1669,17 @@ $("#importPick").onchange = async e => {
     const list = (Array.isArray(data) ? data : data.timers || []).map(normalize).filter(Boolean).map(t => ({ ...t, id: uid() }));
     if (!list.length) return toast("No timers found in that file");
     timers.push(...list); saveTimers(); renderList(); renderSettings();
+    if (Array.isArray(data.log)) {   // merge history, skipping entries already here
+      const seen = new Set(runLog.map(r => r.at + "|" + r.name));
+      runLog = [...runLog, ...data.log.filter(r => r && r.at && !seen.has(r.at + "|" + r.name))].sort((a, b) => b.at - a.at).slice(0, 500); saveLog();
+    }
     toast(`Imported ${list.length} timer${list.length > 1 ? "s" : ""}`);
   } catch { toast("Couldn't read that file"); }
 };
 applyTheme();
 $("#ver").textContent = "v" + VERSION;
 renderList();
+offerResume();
 if ("serviceWorker" in navigator && /^https?:$/.test(location.protocol)) navigator.serviceWorker.register("sw.js").catch(() => {});
 </script>
 </body>

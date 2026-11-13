@@ -11,6 +11,10 @@ A clean, offline workout timer that runs in the browser and installs to your pho
 - Tap anywhere to pause or resume. Hold ✕ to end, so a stray tap can't stop the workout.
 - Voice guidance ("Begin. Burpees", "Relax for 20 seconds", "Rest in three… two… one"), with a choice of voice, pace and tone.
 - Chimes, vibration and keep-screen-on. Sounds play over your own music.
+- **+15 s** button during a timed rest, for when you're not ready yet.
+- Optional **halfway chime** (Settings) on intervals of a minute or more.
+- If the phone closes the app mid-workout, reopening it offers to **resume** at the same spot, paused (within 3 hours).
+- **History** (clock icon): every finished workout, plus any stopped after a minute, with a 7-day total. Included in Export.
 
 **Managing timers**
 - Name each interval, or leave it blank for automatic numbering.
