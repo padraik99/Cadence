@@ -341,7 +341,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
-const VERSION = "1.4", BUILT = "13 Nov 2026";   // bump both with every release: shown under the app name and in Settings
+const VERSION = "1.5", BUILT = "23 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -399,7 +399,7 @@ let settings = { ...DEFAULT_SETTINGS, ...store.get("cadence.settings", {}) };
 const saveSettings = () => store.set("cadence.settings", settings);
 
 function newTimer(type) {
-  const base = { id: uid(), type, name: "", prepare: 10, voice: true };
+  const base = { id: uid(), type, name: "", prepare: 10, voice: true, effort: "moderate" };
   if (type === "interval") return { ...base, warmup: { on: false, dur: 300, name: "" }, cooldown: { on: false, dur: 300, name: "" },
     work: [{ name: "", dur: 40, rest: 20, restName: "" }], restAfterLast: false, sets: 1, setRest: { on: false, dur: 60, name: "", hold: false } };
   const between = { on: false, dur: 30, name: "", hold: false };
@@ -470,7 +470,7 @@ function buildPlan(t) {
       }
     }
   }
-  return { segs, loopFrom };
+  return { segs, loopFrom, tone: toneOf(t), restN: 0 };
 }
 function planTotal(plan) {
   if (plan.loopFrom != null || plan.segs.some(s => s.dur == null && !s.hold)) return null;
@@ -709,7 +709,9 @@ function renderEdit() {
 
   h += `<div class="sec">Start</div><div class="group">
     <div class="row"><div class="lbl">Prepare<small>Get-ready countdown before starting</small></div>${numHTML("prepare", t.prepare, 0, 300, "s")}</div>
-    <div class="row"><div class="lbl">Voice guidance<small>${settings.voice ? "Off = chimes and pips only, for this timer" : "Voice is off for all timers in Settings"}</small></div>${togHTML("voice", t.voice !== false, false)}</div></div>`;
+    <div class="row"><div class="lbl">Voice guidance<small>${settings.voice ? "Off = chimes and pips only, for this timer" : "Voice is off for all timers in Settings"}</small></div>${togHTML("voice", t.voice !== false, false)}</div>
+    <div class="row"><div class="lbl">Effort<small>${settings.playful ? "Tone of playful lines · Easy keeps it plain" : "Used by Playful phrases (off in Settings)"}</small></div>
+      <div class="seg3">${["easy", "moderate", "hard"].map(m => `<button data-eff="${m}" class="${(t.effort || "moderate") === m ? "on" : ""}">${m === "moderate" ? "Mod" : m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div></div>`;
 
   if (t.type === "interval") {
     h += `<div class="sec">Warm up</div><div class="group">
@@ -824,6 +826,8 @@ $("#form").addEventListener("click", e => {
     else v = clamp(v + d, min, max);
     setPath(draft, p, v); return renderEdit();
   }
+  const ef = e.target.closest("[data-eff]");
+  if (ef) { draft.effort = ef.dataset.eff; return renderEdit(); }
   const hb = e.target.closest("[data-hold]");
   if (hb) { setPath(draft, hb.dataset.hp, hb.dataset.hold === "1"); return renderEdit(); }
   const dup = e.target.closest("[data-dup]");
@@ -878,7 +882,7 @@ function renderSettings() {
         <option value="">Automatic</option>${englishVoices().map(v => `<option value="${esc(v.voiceURI)}" ${v.voiceURI === s.voiceURI ? "selected" : ""}>${esc(accentOf(v))} · ${esc(v.name.replace(/^(Google|Microsoft)\s*/, "").replace(/\s*\(.*\)$/, ""))}</option>`).join("")}</select></div>`}
     <div class="row"><div class="lbl">Pace</div><div class="seg3">${["calm", "normal", "brisk"].map(m => `<button data-pace="${m}" class="${s.pace === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>
     ${natural ? "" : `<div class="row"><div class="lbl">Tone</div><div class="seg3">${["deep", "natural", "bright"].map(m => `<button data-tone="${m}" class="${s.tone === m ? "on" : ""}">${m[0].toUpperCase() + m.slice(1)}</button>`).join("")}</div></div>`}
-    <div class="row"><div class="lbl">Playful phrases<small>Light-hearted rest and finish lines</small></div>${togHTML("playful", s.playful, false)}</div>
+    <div class="row"><div class="lbl">Playful phrases<small>Now and then, never repeated · tone set by each timer's Effort</small></div>${togHTML("playful", s.playful, false)}</div>
     <div class="row"><div class="lbl">Count-in<small>"Rest in 3… 2… 1"</small></div>
       <div class="seg3" id="lead">${[3, 4, 5].map(n => `<button data-lead="${n}" class="${s.voiceLead === n ? "on" : ""}">${n}s</button>`).join("")}</div></div>` : ""}
     <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
@@ -1296,7 +1300,7 @@ function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !=
   from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
   const me = R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from,
-    started: false, doneLine: doneLine(), quiet };
+    started: false, doneLine: doneLine(t), quiet };
   renderVoiceBtn();
   if (mode === "push") pushLayer(runBack); else if (mode === "replace") replaceLayer(runBack);
   $("#runTitle").textContent = t.name || defaultName(t);
@@ -1343,7 +1347,7 @@ function entryLine(plan, i, c) {
     if (s.auto) return "Get set";
     const n = stepFrom(plan, i, c); return "Get ready." + (n ? " First up: " + sayAt(plan.segs[n.i], n.c) : "");
   }
-  if (s.kind === "rest") return s.hold ? s.say + ". Tap when you're ready." : (s.line ||= restLine(s, d));
+  if (s.kind === "rest") return s.hold ? s.say + ". Tap when you're ready." : ((s.lines ||= {})[c] ||= restLine(plan, s, d));
   if (s.kind === "warm" || s.kind === "cool") return s.label.replace("#", c) + (d ? ", " + d : "");
   return sayAt(s, c);
 }
@@ -1389,13 +1393,42 @@ function workCount() {
   return `${Math.max(cur, seg().kind === "prep" || seg().kind === "warm" ? 0 : 1)}/${main.length}`;
 }
 
-const pick = a => a[Math.floor(Math.random() * a.length)];
+/* Playful lines: tone follows the timer's effort (easy = none), at most every other rest of 15 s+,
+   dealt from a shuffled deck so nothing repeats within a workout, and last workout's lines sit out the next one. */
 const PHRASES = {
-  rest: [ "Breathe. {d} of rest.", "Shake it out. {d}.", "Recover for {d}. You earned it.", "{d} to rest. Hydrate if you're fancy.", "Rest for {d}. Try not to lie on the floor."],
-  done: [ "That's a wrap. Well done.", "Done. Go admire yourself in a mirror.", "Workout complete. Your couch is proud of you.", "Finished. Legend behaviour."]
+  moderate: {
+    rest: ["Shake it out. {d}.", "Breathe. {d} of rest.", "Nice work. {d} to recover.", "Loosen up. {d}.", "Good pace. Rest, {d}.", "Easy breathing. {d}.", "Drop the shoulders. {d}."],
+    done: ["That's a wrap. Nicely done.", "Workout complete. Good session.", "Done. Well paced.", "All done. That counts."]
+  },
+  hard: {
+    rest: ["Rest for {d}. Try not to lie on the floor.", "{d} of rest. You earned every one.", "Recover for {d}. Pretend you're fine.",
+      "{d} to rest. Hydrate if you're fancy.", "{d} of rest. Your lungs will forgive you.", "Breathe. {d}. Nobody saw that face.",
+      "Rest, {d}. Your legs are complaining, not leaving.", "{d}. Sweat is just weakness with good timing."],
+    done: ["Done. Go admire yourself in a mirror.", "Workout complete. Your couch is proud of you.", "Finished. Legend behaviour.", "That's it. You may now collapse."]
+  }
 };
-const restLine = (s, d) => settings.playful ? (s.say !== "Rest" ? s.say + ". " : "") + pick(PHRASES.rest).replace("{d}", d) : `${s.say}, ${d}`;
-const doneLine = () => settings.playful ? pick(PHRASES.done) : "Workout complete.";
+const PLAYFUL_MIN_REST = 15;
+const toneOf = t => settings.playful && PHRASES[t?.effort || "moderate"] ? (t?.effort || "moderate") : null;
+function shuffle(a) { a = [...a]; for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; }
+function dealer(key, pool) {
+  let bag = [];
+  return () => {
+    const mem = store.get("cadence.phrases", {}), recent = mem[key] || [];
+    if (!bag.length) bag = shuffle(pool.filter(p => !recent.includes(p)));
+    if (!bag.length) bag = shuffle(pool.filter(p => p !== recent[recent.length - 1]));
+    const p = bag.pop();
+    mem[key] = [...recent.filter(x => x !== p), p].slice(-Math.floor(pool.length / 2)); store.set("cadence.phrases", mem);
+    return p;
+  };
+}
+function restLine(plan, s, d) {
+  const plain = `${s.say}, ${d}`, tone = plan.tone;
+  if (!tone || s.dur < PLAYFUL_MIN_REST) return plain;
+  if (++plan.restN % 2) return plain;   // every other qualifying rest, starting with the second
+  plan.dealRest ||= dealer(tone + ".rest", PHRASES[tone].rest);
+  return (s.say !== "Rest" ? s.say + ". " : "") + plan.dealRest().replace("{d}", d);
+}
+function doneLine(t) { const tone = toneOf(t); return tone ? dealer(tone + ".done", PHRASES[tone].done)() : "Workout complete."; }
 const NUM = ["zero", "one", "two", "three", "four", "five"];
 
 function enterSeg(first, silent) {
