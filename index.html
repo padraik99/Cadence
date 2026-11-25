@@ -341,7 +341,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
-const VERSION = "1.5", BUILT = "23 Nov 2026";   // bump both with every release: shown under the app name and in Settings
+const VERSION = "1.6", BUILT = "25 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -956,6 +956,7 @@ function ensureAudio() {
     const AC = window.AudioContext || window.webkitAudioContext;
     if (!AC) return;
     ac = new AC();
+    ac.addEventListener("statechange", () => { if (ac.state === "running" && R?.needsTap) { R.needsTap = false; renderBottom(); } });
     master = ac.createGain(); master.connect(ac.destination);
     musicGain = ac.createGain(); musicGain.connect(master);
   }
@@ -1147,7 +1148,7 @@ function nvEnsure(text, pri = true, vid = settings.nvVoice) {
     return nvLoad(vid).then(() => { const c = nvCall({ t: "synth", text, vid, ls, pri: j.pri }); j.rid = c.rid; return c; })
       .then(m => { const clip = { pcm: m.pcm, sr: m.sr }; nv.mem.set(key, clip); nvSave(key, clip); return true; });
   }).then(ok => { nv.errs = 0; return ok; }, err => {
-    if (err.message === "stale") return false;
+    if (err.message === "stale" || err.message === "voice worker stopped") return false;
     console.warn("Natural voice line failed:", err.message);
     if (++nv.errs >= 4) nvFail("repeated errors");   // e.g. the phone ran out of memory: stop trying, use the phone voice
     return false;
@@ -1299,7 +1300,7 @@ function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !=
   ensureAudio();
   from = from || (mode === "replace" ? "list" : document.querySelector(".view.on")?.id || "list");
   const plan = buildPlan(t);
-  const me = R = { t, plan, i: 0, el: 0, running: true, last: performance.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from,
+  const me = R = { t, plan, i: 0, el: 0, running: true, last: Date.now(), fired: new Set(), cycle: 1, done: false, startedAt: Date.now(), active: 0, from,
     started: false, doneLine: doneLine(t), quiet };
   renderVoiceBtn();
   if (mode === "push") pushLayer(runBack); else if (mode === "replace") replaceLayer(runBack);
@@ -1310,19 +1311,25 @@ function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !=
   if (settings.volume > 0) keepAlive(true);   // keeps Bluetooth awake for chimes too, not just speech
   const go = me.go = () => {
     if (R !== me || me.started) return;
-    me.started = true; me.last = performance.now(); me.startedAt = Date.now();
+    me.started = true; me.last = Date.now(); me.startedAt = Date.now();
     run.classList.remove("prepping");
-    if (resume) {   // picked up after the app was closed: same spot, paused, nothing said until they press play
-      Object.assign(me, { i: resume.i, el: resume.el, cycle: resume.cycle, active: resume.active, startedAt: resume.startedAt, running: false });
-      run.classList.add("paused"); enterSeg(true, true);
+    if (resume) {   // picked up after the phone closed the app
+      const live = resume.running === true;
+      Object.assign(me, { i: resume.i, el: resume.el, cycle: resume.cycle, active: resume.active, startedAt: resume.startedAt, running: live });
+      enterSeg(true, true);
+      if (live) {
+        me.last = resume.at; musicPlay();
+        setTimeout(() => { if (R === me && !me.done && (!ac || ac.state !== "running")) { me.needsTap = true; renderBottom(); } }, 500);
+      }   // the next tick moves the clock to where it should be now
+      else run.classList.add("paused");
     } else { musicPlay(); enterSeg(true); }
     renderBottom();
-    loopId = setInterval(tick, 100);
+    loopId = setInterval(tick, 100); tick();
     requestAnimationFrame(frame);
   };
   /* Natural voice: synthesize every line this workout will say before the clock starts, so each one lands on its beat */
   const lines = nvActive() && !quiet && settings.volume > 0 ? planLines(plan, 1, plan.loopFrom != null ? 3 : 1) : [];
-  if (lines.every(l => nv.mem.has(nvKey(l)))) return go();
+  if (lines.every(l => nv.mem.has(nvKey(l)))) { nvRelease(plan, lines); return go(); }
   const s0 = plan.segs[0], total = new Set(lines).size;
   run.classList.add("prepping"); run.style.setProperty("--c", KIND_COLOR[s0.kind]);
   $("#phase").textContent = "Preparing voice"; $("#runCount").textContent = "";
@@ -1333,7 +1340,12 @@ function startRun(t, mode = "push", from, quiet = !(settings.voice && t.voice !=
   nvPrepare(lines, 20000, (n, tot) => {
     if (R !== me || me.started) return;
     $("#next").textContent = `${n} of ${tot} lines ready`; $("#bar").style.width = (n / tot * 100).toFixed(1) + "%";
-  }).then(go);
+  }).then(() => { nvRelease(plan, lines); go(); });
+}
+/* The voice engine holds a lot of memory. Android closes memory-heavy pages first when they're in the background,
+   so once every line this workout needs is ready, unload it (it reloads by itself if something new is needed). */
+function nvRelease(plan, lines) {
+  if (plan.loopFrom == null && lines.length && lines.every(l => nv.mem.has(nvKey(l))) && !nv.pend.size) nvStop();
 }
 /* pure helpers: what gets said for segment i (on loop number c), shared by the runner and the voice preparation */
 function stepFrom(plan, i, c) {
@@ -1452,18 +1464,40 @@ function updateNext() {
   if (seg().hold) { $("#next").innerHTML = `Resting · next <b>${n ? esc(segLabel(n.s, n.cycle)) : "finish"}</b>`; return; }
   $("#next").innerHTML = n ? `Next · <b>${esc(segLabel(n.s, n.cycle))}</b>${n.s.dur ? " " + fmt(n.s.dur) : ""}` : (seg().dur == null ? "Tap to pause" : "Final interval");
 }
+/* The clock runs on real time (Date.now), not on how often this gets called. Android slows or pauses pages in the
+   background; when it wakes up again, the workout jumps to where it should be instead of losing that time. */
 function tick() {
-  if (!R || R.done) return;
-  const now = performance.now(), dt = Math.min((now - R.last) / 1000, 5);
+  if (!R || R.done || !R.started) return;
+  const now = Date.now(), dt = clamp((now - R.last) / 1000, 0, 6 * 3600);
   R.last = now;
   if (!R.running) return;
-  if (now - (R.saved || 0) > 2000) snapSave();
   R.el += dt; R.active += dt;
+  if (dt > 1.5) catchUp();
+  else {
+    const s = seg();
+    if (s.dur != null) { const rem = s.dur - R.el; cues(s, rem); if (rem <= 0) advance(Math.min(-rem, 1)); }
+  }
+  if (R && !R.done && now - (R.saved || 0) > 2000) snapSave();
+}
+function catchUp() {
+  let moved = false;
+  while (seg().dur != null && R.el >= seg().dur) {
+    const over = R.el - seg().dur;
+    if (R.i + 1 < R.plan.segs.length) R.i++;
+    else if (R.plan.loopFrom != null) { R.i = R.plan.loopFrom; R.cycle++; }
+    else { R.active -= over; return finish(); }
+    R.el = over; moved = true;
+    if (seg().hold) { R.active -= over; R.el = 0; break; }   // a "when I tap" rest waits for the tap
+  }
+  if (moved) {
+    if (R.plan.loopFrom != null && nvActive()) planLines(R.plan, R.cycle, R.cycle + 2).forEach(l => nvEnsure(l, false));
+    enterSeg(false, R.el > 2);   // announce it only if it has only just begun
+  }
   const s = seg();
   if (s.dur == null) return;
-  const rem = s.dur - R.el;
-  cues(s, rem);
-  if (rem <= 0) advance(Math.min(-rem, 1));
+  const rem = s.dur - R.el;   // cues whose moment has passed stay quiet
+  for (let k = settings.voiceLead; k >= 1; k--) if (rem <= k - 0.5) R.fired.add("c" + k);
+  if (rem < s.dur / 2 - 1) R.fired.add("h");
 }
 function cues(s, rem) {
   const lead = settings.voiceLead, voiceOn = voiceWanted() && (hasTTS || nvActive());
@@ -1516,7 +1550,7 @@ function frame() {
 }
 function togglePause() {
   if (!R || R.done || !R.started) return;
-  R.running = !R.running; R.last = performance.now();
+  R.running = !R.running; R.last = Date.now();
   run.classList.toggle("paused", !R.running);
   sfx.pause(); buzz(R.running ? 60 : [40, 60, 40]); snapSave();
   if (R.running) { holdWake(); musicPlay(); } else { musicPause(); stopSpeech(); }
@@ -1533,6 +1567,7 @@ function renderBottom() {
   if (!R || R.done) { b.innerHTML = ""; return; }
   if (!R.started) { b.innerHTML = `<div class="hint">Tap to start now · the phone voice covers any line that isn't ready</div>`; return; }
   const paused = !R.running;
+  if (R.needsTap) { b.innerHTML = `<div class="ctrls"><button class="ext" data-act="sound">Turn sound on</button></div><div class="hint">The phone closed the app · the timer kept going</div>`; return; }
   const ext = extendable(seg()) && !paused ? `<div class="ctrls"><button class="ext" data-act="ext" aria-label="Add ${EXT_SEC} seconds of rest">+${EXT_SEC} s</button></div>` : "";
   if (seg().hold && !paused) {
     b.innerHTML = `<div class="ctrls"><button class="main" data-act="next" aria-label="I'm ready">${ICON.play}</button></div>
@@ -1551,13 +1586,16 @@ run.addEventListener("pointerdown", e => {
   const btn = e.target.closest("button");
   if (btn) return;
   if (!R.started) { e.preventDefault(); return R.go(); }
+  if (R.needsTap) { e.preventDefault(); return wakeSound(); }
+  if (Date.now() - (R.shownAt || 0) < 700) return;   // the tap that brought the app back isn't a pause
   if (!settings.tapAnywhere) return;
   e.preventDefault();
   if (seg().hold && R.running) advance(0); else togglePause();
 });
 $("#runBottom").addEventListener("click", e => {
   const a = e.target.closest("[data-act]")?.dataset.act;
-  if (a === "toggle") togglePause(); else if (a === "prev") skip(-1); else if (a === "next") skip(1); else if (a === "ext") extendRest();
+  if (R?.needsTap) wakeSound();
+  if (a === "toggle") togglePause(); else if (a === "prev") skip(-1); else if (a === "next") skip(1); else if (a === "ext") extendRest(); else if (a === "sound") wakeSound();
 });
 
 /* hold-to-exit: needs a 0.7s press while running so a stray tap can't end a workout */
@@ -1653,16 +1691,29 @@ $("#logSheet").addEventListener("click", async e => {
 const SNAP_KEY = "cadence.resume";
 function snapSave() {
   if (!R || !R.started || R.done) return;
-  R.saved = performance.now();
-  store.set(SNAP_KEY, { t: R.t, i: R.i, el: R.el, cycle: R.cycle, active: R.active, startedAt: R.startedAt, quiet: R.quiet, at: Date.now() });
+  R.saved = Date.now();
+  store.set(SNAP_KEY, { t: R.t, i: R.i, el: R.el, cycle: R.cycle, active: R.active, startedAt: R.startedAt, quiet: R.quiet, running: R.running, at: R.last });
 }
 function snapClear() { try { localStorage.removeItem(SNAP_KEY); } catch {} }
 addEventListener("pagehide", snapSave);
-document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") snapSave(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "hidden") return snapSave();
+  if (!R) return;
+  R.shownAt = Date.now();
+  if (ac && ac.state !== "running" && ac.state !== "closed") ac.resume().catch(() => {});
+  tick();   // catch up right away rather than on the next scheduled tick
+});
+function wakeSound() {
+  ensureAudio(); if (settings.volume > 0) keepAlive(true);
+  if (R) { R.needsTap = false; renderBottom(); }
+}
+/* If the phone closed the app while the timer was running, reopen straight into the workout at the right moment.
+   If it was paused, ask first. */
 function offerResume() {
   const sn = store.get(SNAP_KEY, null); if (!sn) return;
   const t = normalize(sn.t), s = t && buildPlan(t).segs[sn.i];
   if (!s || Date.now() - sn.at > 3 * 3600e3) return snapClear();   // too old to be the same workout
+  if (sn.running === true) return startRun(t, "push", "list", sn.quiet, sn);
   const ago = Math.round((Date.now() - sn.at) / 60000);
   confirmSheet(`Resume “${t.name || defaultName(t)}”?`,
     `The app closed ${ago < 1 ? "just now" : ago === 1 ? "a minute ago" : ago + " minutes ago"}, during ${s.label.replace("#", sn.cycle)} with ${fmt(sn.active)} done. It picks up at the same spot, paused.`,

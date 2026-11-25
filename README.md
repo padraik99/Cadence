@@ -14,7 +14,8 @@ A clean, offline workout timer that runs in the browser and installs to your pho
 - **+15 s** button during a timed rest, for when you're not ready yet.
 - Optional **playful phrases** (Settings): on every other rest of 15 s or more, never repeated within a workout, and last workout's lines are held back. Each timer's **Effort** sets the tone: Easy keeps the voice plain, Moderate is encouraging, Hard gets the jokes.
 - Optional **halfway chime** (Settings) on intervals of a minute or more.
-- If the phone closes the app mid-workout, reopening it offers to **resume** at the same spot, paused (within 3 hours).
+- **Keeps time in the background.** The clock runs on real time, so if Android pauses the app while you check another one, the workout is at the right moment when you come back. If Android closes the app while a workout is running, reopening it (within 3 hours) jumps straight back in at the live position; tap once to turn sound back on. A workout that was paused asks before resuming.
+- For the fewest interruptions on Android, set the browser the app runs in (Chrome or Edge) to **Unrestricted** battery use.
 - **History** (clock icon): every finished workout, plus any stopped after a minute, with a 7-day total. Included in Export.
 
 **Managing timers**
