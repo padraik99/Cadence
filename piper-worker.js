@@ -7,7 +7,6 @@ const PH = "https://cdn.jsdelivr.net/npm/@diffusionstudio/piper-wasm@1.0.0/build
 const CACHE = "cadence-voice-v1";
 /* [url, approximate bytes] - sizes only feed the progress bar */
 const RUNTIME = [[ORT + "ort.wasm.min.js", 143e3], [ORT + "ort-wasm-simd.wasm", 10.6e6], [PH + ".js", 121e3], [PH + ".wasm", 635e3], [PH + ".data", 18.1e6]];
-const MODEL_BYTES = 63.3e6;
 
 let rt = null;      // { phModule, phData } once the runtime scripts are in
 let voice = null;   // { id, session, cfg }
@@ -25,9 +24,9 @@ async function get(url, onBytes) {
   return blob;
 }
 
-async function load(id, url, rid) {
+async function load(id, url, rid, bytes) {
   if (voice && voice.id === id) return;
-  const files = [...(rt ? [] : RUNTIME), [url + ".json", 5e3], [url, MODEL_BYTES]];
+  const files = [...(rt ? [] : RUNTIME), [url + ".json", 8e3], [url, bytes || 63.3e6]];
   let total = 0, loaded = 0, lastPost = 0;
   for (const f of files) if (!(await cached(f[0]))) total += f[1];
   const onBytes = n => {
@@ -80,14 +79,18 @@ function trim(x, sr) {
   for (let i = 0; i < f; i++) { out[i] *= i / f; out[out.length - 1 - i] *= i / f; }
   return out;
 }
-async function infer(ids, ls) {
+async function infer(ids, ls, spk) {
   const inf = voice.cfg.inference || {};
   const feeds = {
     input: new ort.Tensor("int64", BigInt64Array.from(ids, v => BigInt(v)), [1, ids.length]),
     input_lengths: new ort.Tensor("int64", BigInt64Array.from([BigInt(ids.length)]), [1]),
     scales: new ort.Tensor("float32", Float32Array.from([inf.noise_scale ?? 0.667, (inf.length_scale ?? 1) * ls, inf.noise_w ?? 0.8]), [3])
   };
-  if ((voice.cfg.num_speakers || 1) > 1) feeds.sid = new ort.Tensor("int64", BigInt64Array.from([0n]), [1]);
+  if ((voice.cfg.num_speakers || 1) > 1) {   // one model, many speakers: pick by name (e.g. "p245") from its own map
+    const sid = voice.cfg.speaker_id_map?.[spk];
+    if (spk && sid == null) throw new Error("speaker " + spk + " not in this model");
+    feeds.sid = new ort.Tensor("int64", BigInt64Array.from([BigInt(sid ?? 0)]), [1]);
+  }
   const res = await voice.session.run(feeds);
   return trim((res.output || Object.values(res)[0]).data, voice.cfg.audio.sample_rate);
 }
@@ -101,7 +104,7 @@ async function pump() {
   while (queue.length) {
     const job = queue[0];
     try {
-      if (job.t === "load") { await load(job.id, job.url, job.rid); postMessage({ t: "ok", rid: job.rid }); }
+      if (job.t === "load") { await load(job.id, job.url, job.rid, job.bytes); postMessage({ t: "ok", rid: job.rid }); }
       else {
         if (!voice || voice.id !== job.vid) throw new Error("stale");   // a different voice was loaded meanwhile
         if (!job.ids) {
@@ -111,7 +114,7 @@ async function pump() {
           else job.ids = (await phonemize([clean(job.text)]))[0];
         }
         if (!job.ids || !job.ids.length) throw new Error("nothing to say");
-        const pcm = await infer(job.ids, job.ls || 1);
+        const pcm = await infer(job.ids, job.ls || 1, job.spk);
         postMessage({ t: "ok", rid: job.rid, pcm, sr: voice.cfg.audio.sample_rate }, [pcm.buffer]);
       }
     } catch (e) { postMessage({ t: "err", rid: job.rid, msg: String(e && e.message || e) }); }

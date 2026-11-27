@@ -341,7 +341,7 @@ input[type=range]::-moz-range-thumb{width:26px;height:26px;border-radius:50%;bac
 /* =========================================================
    Utilities & storage
    ========================================================= */
-const VERSION = "1.6", BUILT = "25 Nov 2026";   // bump both with every release: shown under the app name and in Settings
+const VERSION = "1.7", BUILT = "27 Nov 2026";   // bump both with every release: shown under the app name and in Settings
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
 const pad = n => String(n).padStart(2, "0");
@@ -888,7 +888,7 @@ function renderSettings() {
     <div class="row"><div class="lbl">Headphones → 25%<small>Drop volume when headphones connect</small></div>${togHTML("headphoneDuck", s.headphoneDuck, false)}</div>
     <div class="row"><div class="lbl">Test</div><button class="txt-btn" id="testSound" style="color:var(--text);background:var(--panel2)">Play sample</button></div>
   </div>
-  ${!s.voice ? "" : natural ? `<div class="note">Natural voices are downloaded once (about 90 MB for the first, 63 MB for each extra one — Wi-Fi recommended) and then work with no signal. ${nvActive() ? "Starting a workout takes a few seconds the first time while its lines are prepared; if a line isn't ready in time, the phone voice says it." : nv.failed ? "The natural voice couldn't start on this device, so the phone voice is being used." : "Until one is downloaded, the phone voice is used."}</div>`
+  ${!s.voice ? "" : natural ? `<div class="note">Natural voices are downloaded once (the first takes about 30 MB extra for the speech engine; the Irish, New Zealand and Australian voices share one 77 MB download — Wi-Fi recommended) and then work with no signal. ${nvActive() ? "Starting a workout takes a few seconds the first time while its lines are prepared; if a line isn't ready in time, the phone voice says it." : nv.failed ? "The natural voice couldn't start on this device, so the phone voice is being used." : "Until one is downloaded, the phone voice is used."}</div>`
     : `<div class="note">Voices come from your phone. For more accents and smoother voices on Android: Settings → Text-to-speech → Google → Install voice data.</div>`}
   <div class="sec">Music</div><div class="group">
     <div class="row"><div class="lbl">Play my own tracks<small id="musicInfo">${playlist.length ? playlist.length + " track" + (playlist.length > 1 ? "s" : "") + " loaded" : "Ducks under timer cues"}</small></div>
@@ -930,7 +930,7 @@ $("#setSheet").addEventListener("click", e => {
   if (vm) { settings.voiceMode = vm.dataset.vm; saveSettings(); renderSettings(); nvWarm(); }
   const nb = e.target.closest("[data-nvact]"), nr = e.target.closest("[data-nv]");
   if (nb) nvAction(nb.dataset.nvact, nr.dataset.nv);
-  else if (nr) nvAction(nv.stored.has(nr.dataset.nv) ? "use" : "get", nr.dataset.nv);
+  else if (nr) nvAction(nv.stored.has(nvModel(nr.dataset.nv)) ? "use" : "get", nr.dataset.nv);
   const pc = e.target.closest("[data-pace]"), tn = e.target.closest("[data-tone]");
   if (pc || tn) { if (pc) settings.pace = pc.dataset.pace; else settings.tone = tn.dataset.tone; saveSettings(); renderSettings(); ensureAudio(); sayWhenReady("Relax for twenty seconds."); nvWarm(6000); }
   if (e.target.id === "testSound") {
@@ -1057,14 +1057,24 @@ function leadIn() {
 }
 
 /* ---- Natural voice: Piper neural TTS, run on the device by piper-worker.js ---- */
-const NV_VOICES = [   // all from huggingface.co/rhasspy/piper-voices; Piper has no Irish, Welsh or Australian English voice
-  { id: "en_US-hfc_female-medium", accent: "American", who: "female" },
-  { id: "en_US-ryan-medium", accent: "American", who: "Ryan · male" },
+/* All from huggingface.co/rhasspy/piper-voices. Piper's English voices are British or American only; the Irish,
+   New Zealand and Australian ones are speakers inside en_GB-vctk, a model trained on the VCTK corpus (109 speakers,
+   accents from its speaker-info.txt). One download serves all of them. Piper has no Pacific Islander English voice. */
+const VCTK = "en_GB-vctk-medium";
+const NV_VOICES = [
   { id: "en_GB-cori-medium", accent: "British", who: "Cori · female" },
-  { id: "en_GB-alan-medium", accent: "British", who: "Alan · male" },
   { id: "en_GB-northern_english_male-medium", accent: "Northern English", who: "male" },
-  { id: "en_GB-alba-medium", accent: "Scottish", who: "Alba · female" }
+  { id: "en_GB-alba-medium", accent: "Scottish", who: "Alba · female" },
+  { id: "vctk-p245", model: VCTK, spk: "p245", accent: "Irish", who: "Dublin · male" },
+  { id: "vctk-p298", model: VCTK, spk: "p298", accent: "Irish", who: "Tipperary · male" },
+  { id: "vctk-p364", model: VCTK, spk: "p364", accent: "Irish", who: "Donegal · male" },
+  { id: "vctk-p335", model: VCTK, spk: "p335", accent: "New Zealand", who: "female" },
+  { id: "vctk-p326", model: VCTK, spk: "p326", accent: "Australian", who: "Sydney · male" }
 ];
+const NV_MB = { [VCTK]: 77 }, NV_GONE = ["en_US-hfc_female-medium", "en_US-ryan-medium", "en_GB-alan-medium"];   // voices dropped in 1.7
+const nvVoice = id => NV_VOICES.find(v => v.id === id);
+const nvModel = id => nvVoice(id)?.model || id;   // which download a voice lives in
+const nvShared = m => NV_VOICES.filter(v => nvModel(v.id) === m);
 const NV_CACHE = "cadence-voice-v1", NV_PACE = { calm: 1.12, normal: 1, brisk: 0.9 };
 const NV_SAMPLE = "Work one: squats. Rest in three.";
 const nvUrl = id => { const [loc, name, q] = id.split("-"); return `https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/${loc}/${name}/${q}/${id}.onnx`; };
@@ -1074,7 +1084,7 @@ const nv = {
   stored: new Set(), loaded: "", dl: null, busy: "", failed: false,
   mem: new Map(), pend: new Map(), src: null, duckT: null, errs: 0
 };
-const nvActive = () => settings.voice && settings.voiceMode === "natural" && nv.ok && !nv.failed && nv.stored.has(settings.nvVoice);
+const nvActive = () => settings.voice && settings.voiceMode === "natural" && nv.ok && !nv.failed && !!nvVoice(settings.nvVoice) && nv.stored.has(nvModel(settings.nvVoice));
 const nvKey = (text, vid = settings.nvVoice) => `${vid}|${settings.pace}|${text}`;
 const setOpen = () => $("#setScrim").classList.contains("on");
 
@@ -1107,7 +1117,7 @@ function nvCall(msg, onProgress) {
 function nvLoad(id, onProgress) {
   if (nv.loaded === id) return Promise.resolve();
   if (nv.loadP?.id === id) return nv.loadP;
-  const p = nv.loadP = nvCall({ t: "load", id, url: nvUrl(id), pri: true }, onProgress)
+  const p = nv.loadP = nvCall({ t: "load", id, url: nvUrl(id), bytes: (NV_MB[id] || 63.2) * 1e6, pri: true }, onProgress)
     .then(() => { nv.loaded = id; nv.stored.add(id); }).finally(() => { if (nv.loadP === p) nv.loadP = null; });
   p.id = id; return p;
 }
@@ -1145,7 +1155,8 @@ function nvEnsure(text, pri = true, vid = settings.nvVoice) {
   j = { pri, rid: 0 };
   j.p = nvRecall(key).then(hit => {
     if (hit) { nv.mem.set(key, hit); return true; }
-    return nvLoad(vid).then(() => { const c = nvCall({ t: "synth", text, vid, ls, pri: j.pri }); j.rid = c.rid; return c; })
+    const v = nvVoice(vid); if (!v) throw new Error("unknown voice");
+    return nvLoad(nvModel(vid)).then(() => { const c = nvCall({ t: "synth", text, vid: nvModel(vid), spk: v.spk, ls, pri: j.pri }); j.rid = c.rid; return c; })
       .then(m => { const clip = { pcm: m.pcm, sr: m.sr }; nv.mem.set(key, clip); nvSave(key, clip); return true; });
   }).then(ok => { nv.errs = 0; return ok; }, err => {
     if (err.message === "stale" || err.message === "voice worker stopped") return false;
@@ -1190,18 +1201,23 @@ async function nvScan() {
   if (!nv.ok) return;
   try {
     const c = await caches.open(NV_CACHE);
-    for (const v of NV_VOICES) if (await c.match(nvUrl(v.id))) nv.stored.add(v.id);
+    for (const m of new Set(NV_VOICES.map(v => nvModel(v.id)))) if (await c.match(nvUrl(m))) nv.stored.add(m);
+    for (const m of NV_GONE) if (await c.match(nvUrl(m))) { await c.delete(nvUrl(m)); await c.delete(nvUrl(m) + ".json"); }   // free the space
+    if (settings.nvVoice && !nvVoice(settings.nvVoice)) {   // their voice was one of the dropped ones: switch to one they have
+      settings.nvVoice = NV_VOICES.find(v => nv.stored.has(nvModel(v.id)))?.id || ""; saveSettings();
+    }
     nvStore("readonly", s => s.count()).then(n => { if (n > 600) nvStore("readwrite", s => s.clear()); }).catch(() => {});
   } catch { nv.ok = false; }
   if (setOpen()) renderSettings();
   nvWarm();
 }
 function nvRowHTML(v) {
-  const have = nv.stored.has(v.id), sel = have && settings.nvVoice === v.id, dl = nv.dl?.id === v.id;
+  const m = nvModel(v.id), have = nv.stored.has(m), sel = have && settings.nvVoice === v.id, dl = nv.dl?.model === m;
+  const n = nvShared(m).length, inUse = nvShared(m).some(x => x.id === settings.nvVoice);   // removing deletes the whole download
   return `<div class="row nvrow ${sel ? "picked" : ""} ${have ? "" : "off"}" data-nv="${v.id}"><span class="radio"></span>
-    <div class="lbl">${v.accent}<small>${v.who}${have ? "" : " · 63 MB"}</small></div>
-    ${dl ? `<span class="nvpct" id="nvPct">${nv.dl.pct < 100 ? nv.dl.pct + "%" : "Starting…"}</span>`
-      : have ? `${sel ? "" : `<button class="pill quiet" data-nvact="rm">Remove</button>`}<button class="pill" data-nvact="play">${nv.busy === v.id ? "…" : "Preview"}</button>`
+    <div class="lbl">${v.accent}<small>${v.who}${have ? "" : ` · ${NV_MB[m] || 63} MB${n > 1 ? `, shared by ${n} voices` : ""}`}</small></div>
+    ${dl ? (nv.dl.id === v.id ? `<span class="nvpct" id="nvPct">${nv.dl.pct < 100 ? nv.dl.pct + "%" : "Starting…"}</span>` : `<span class="nvpct">…</span>`)
+      : have ? `${inUse ? "" : `<button class="pill quiet" data-nvact="rm">Remove</button>`}<button class="pill" data-nvact="play">${nv.busy === v.id ? "…" : "Preview"}</button>`
       : `<button class="pill" data-nvact="get">Download</button>`}</div>`;
 }
 async function nvAction(act, id) {
@@ -1209,10 +1225,10 @@ async function nvAction(act, id) {
   if (act === "get") {
     if (nv.dl) return toast("One download at a time");
     if (nv.failed) return toast("Natural voice couldn't start on this device");
-    nv.dl = { id, pct: 0 }; renderSettings();
+    nv.dl = { id, model: nvModel(id), pct: 0 }; renderSettings();
     try { navigator.storage?.persist?.().catch(() => {}); } catch {}
     try {
-      await nvLoad(id, pct => { nv.dl.pct = pct; const el = $("#nvPct"); if (el) el.textContent = pct < 100 ? pct + "%" : "Starting…"; });
+      await nvLoad(nvModel(id), pct => { nv.dl.pct = pct; const el = $("#nvPct"); if (el) el.textContent = pct < 100 ? pct + "%" : "Starting…"; });
       settings.nvVoice = id; saveSettings(); nv.dl = null; if (setOpen()) renderSettings();
       toast("Voice downloaded"); nvAction("play", id); nvWarm();
     } catch (err) {
@@ -1230,9 +1246,11 @@ async function nvAction(act, id) {
     const clip = nv.mem.get(nvKey(NV_SAMPLE, id));
     if (ok && clip && ac) nvPlay(clip, 0); else if (!nv.failed) toast("Couldn't play that voice");
   } else if (act === "rm") {
-    const c = await caches.open(NV_CACHE); await c.delete(nvUrl(id)); await c.delete(nvUrl(id) + ".json");
-    nv.stored.delete(id); if (nv.loaded === id && !nv.dl) nvStop();
-    renderSettings(); toast("Voice removed");
+    const m = nvModel(id), n = nvShared(m).length;
+    if (n > 1 && !(await confirmSheet("Remove these voices?", `${nvShared(m).map(v => `${v.accent} (${v.who.split(" · ")[0]})`).join(", ")} share one download, so they're all removed together.`, "Remove"))) return;
+    const c = await caches.open(NV_CACHE); await c.delete(nvUrl(m)); await c.delete(nvUrl(m) + ".json");
+    nv.stored.delete(m); if (nv.loaded === m && !nv.dl) nvStop();
+    if (setOpen()) renderSettings(); toast(n > 1 ? "Voices removed" : "Voice removed");
   }
 }
 nvScan();

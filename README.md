@@ -35,11 +35,12 @@ The app lives in `index.html`; there's no build step. Timers are saved on the de
 ## Natural voice
 Settings → Voice quality → **Natural** swaps the phone's built-in voice for a neural one that runs on the device ([Piper](https://github.com/rhasspy/piper), via WebAssembly in `piper-worker.js`).
 
-- Voices: American (female, male), British (female, male), Northern English (male), Scottish (female). That is what Piper offers for English accents; it has no Irish, Welsh or Australian voice.
-- A voice is downloaded once (about 90 MB for the first, 63 MB for each extra one), stored on the device, and then works offline.
+- Voices: British (Cori, female), Northern English (male), Scottish (Alba, female), Irish (male: Dublin, Tipperary or Donegal), New Zealand (female), Australian (male).
+- Piper's English voices are British or American only. The Irish, New Zealand and Australian voices are individual speakers inside Piper's `en_GB-vctk` model, which was trained on the VCTK corpus; their accents come from that corpus's speaker list. Piper has no Pacific Islander English voice.
+- Each voice is downloaded once and then works offline: 63 MB for each of the first three; the five VCTK voices share a single 77 MB download. The first download also fetches the speech engine (about 30 MB).
 - Every line a timer will say is synthesized ahead of time and saved, so cues land on the beat. Saved timers are prepared in the background; a timer that isn't ready yet shows "Preparing voice" for a few seconds before it starts.
 - If a line isn't ready in time, or the voice can't run on the device, the phone's voice says it instead.
 
 Downloaded on demand, not included in this repo:
-- Voice models from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices). Each has its own licence (see its `MODEL_CARD`); the two American voices are CC BY-NC-SA, so non-commercial use only.
+- Voice models from [rhasspy/piper-voices](https://huggingface.co/rhasspy/piper-voices). Each has its own licence (see its `MODEL_CARD`).
 - [onnxruntime-web](https://www.npmjs.com/package/onnxruntime-web) (MIT) and [piper-wasm](https://www.npmjs.com/package/@diffusionstudio/piper-wasm), which contains espeak-ng (GPL-3.0), from jsDelivr.
